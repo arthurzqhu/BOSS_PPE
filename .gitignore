@@ -1,0 +1,16 @@
+.venv/*
+MCMC_posterior
+PPE csv
+__pycache__
+hp_tuning
+hp_tuning_withclass
+models
+plots
+PPE_MCMC_corner.png
+Session.vim
+condcoll_isd.keras
+condcoll_model.pdf
+condcoll_sd.keras
+mcmc_test_linear.png
+mcmc_test_linear2.png
+output.png
