@@ -14,8 +14,10 @@ from matplotlib.colors import LogNorm
 
 vnum='0001'
 nikki = '2025-04-28'
-sim_config = 'fullmic_Psed_r1_RWM'
-target_simconfig = 'fullmic'
+sim_config = 'condcoll'
+l_cic = False
+# sim_config = 'fullmic_Psed_r1_HMC'
+target_simconfig = 'condcoll'
 
 plot_dir = 'plots/' + nikki + '/' + sim_config + '/'
 if not os.path.exists(plot_dir):
@@ -24,12 +26,12 @@ if not os.path.exists(plot_dir):
 # obtaining case related variables
 mconfigs = os.listdir(lp.output_dir + nikki)
 var1_strs, var2_strs = lp.get_dics(lp.output_dir, 'target', target_simconfig)
-mps, nmp = lp.get_mps(lp.output_dir, nikki, sim_config)
+mps, nmp = lp.get_mps(lp.output_dir, nikki, sim_config, l_cic, var1_strs[0], var2_strs[0])
 mps = lp.sort_strings_by_number(mps)
 
 # var_interest = [106, 107] # see lp.indvar_ename_set
-var_interest = [108, 95, 107, 121, 122] # see lp.indvar_ename_set
-# var_interest = [2,3,4,9] # see lp.indvar_ename_set
+# var_interest = [108, 95, 107, 121, 122] # see lp.indvar_ename_set
+var_interest = [2,3,4] # see lp.indvar_ename_set
 indvar_names = [lp.indvar_name_set[idx] for idx in var_interest]
 indvar_enames = [lp.indvar_ename_set[idx] for idx in var_interest]
 indvar_units = [lp.indvar_units_set[idx] for idx in var_interest]
@@ -53,16 +55,17 @@ if os.path.isfile(nc_summary_pkl_fn):
     # with open(data_range_pkl_fn, 'rb') as file:
     #     data_range = pickle.load(file)
 else:
-    # for var1_str in var1_strs:
-    #     for var2_str in var2_strs:
+    for var1_str in var1_strs:
+        for var2_str in var2_strs:
     # send in the var_strs anyway to get the perturbed IC from global attributes
-    file_info.update({'sim_config': sim_config, 
-                      'var1_str': var1_strs[0], 
-                      'var2_str': var2_strs[0]})
+            file_info.update({'sim_config': sim_config, 
+                              'var1_str': var1_str, 
+                              'var2_str': var2_str})
 
-    for imp, mp in enumerate(tqdm(mps, desc='loading PPEs')):
-        file_info['mp_config'] = mp
-        nc_dict = lp.load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic=True)[0]
+            for imp, mp in enumerate(mps):
+            # for imp, mp in enumerate(tqdm(mps, desc='loading PPEs')):
+                file_info['mp_config'] = mp
+                nc_dict = lp.load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic=l_cic)[0]
 
     with open(nc_summary_pkl_fn, 'wb') as file:
         pickle.dump(nc_dict, file)
@@ -96,15 +99,33 @@ ic2_boss = np.zeros(nmp)
 var_boss = np.zeros(nmp)
 for var_ename, var_units in zip(indvar_enames, indvar_units):
     var_is_scalar = isinstance(nc_dict[ic_str]['BIN_TAU'][var_ename], np.float64)
+    var_is_arr = isinstance(nc_dict[ic_str]['BIN_TAU'][var_ename], np.ma.core.MaskedArray)
     if var_is_scalar:
         plt.figure(figsize=(8, 4))
 
     # load BOSS PPEs
-    ic_str = 'cic'
-    for imp, mp in enumerate(mps):
-        ic1_boss[imp] = nc_dict[ic_str][mp][var1_vn]
-        ic2_boss[imp] = nc_dict[ic_str][mp][var2_vn]
-        var_boss[imp] = nc_dict[ic_str][mp][var_ename]
+    if l_cic:
+        ic_str = 'cic'
+        for imp, mp in enumerate(mps):
+            ic1_boss[imp] = nc_dict[ic_str][mp][var1_vn]
+            ic2_boss[imp] = nc_dict[ic_str][mp][var2_vn]
+            var_boss[imp] = nc_dict[ic_str][mp][var_ename]
+
+    if var_is_arr and not l_cic:
+        for var1_str in var1_strs:
+            for var2_str in var2_strs:
+                if var_is_arr:
+                    plt.figure(figsize=(8, 4))
+                # print(var1_str, var2_str)
+                ic_str = var1_str + var2_str
+                for mp in mps:
+                    # print(nc_dict[ic_str].keys())
+                    plt.plot(nc_dict['time'], nc_dict[ic_str][mp][var_ename], label=mp, color='tab:blue')
+                plt.plot(nc_dict['time'], nc_dict[ic_str]['BIN_TAU'][var_ename], label='BIN_TAU', color='tab:orange')
+                plt.legend()
+                plt.ylabel(var_ename + var_units)
+                plt.xlabel('Time [s]')
+                plt.savefig(plot_dir + var_ename + ic_str + '.pdf')
 
     # if var_is_scalar:
     #     plt.scatter(ic1_boss, ic2_boss, c=var_boss, s=5)
@@ -144,6 +165,13 @@ for var_ename, var_units in zip(indvar_enames, indvar_units):
         norm = LogNorm(vmin=vmin, vmax=vmax)
     else:
         norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+
+    # if var_is_arr:
+    #     plt.plot(nc_dict['time'], nc_dict[ic_str][mp][var_ename], label=mp, color='tab:orange')
+    #     plt.legend()
+    #     plt.ylabel(var_ename + var_units)
+    #     plt.xlabel('Time [s]')
+    #     plt.savefig(plot_dir + var_ename + '.pdf')
 
     if var_is_scalar:
         plt.scatter(ic1_boss, ic2_boss, c=var_boss, s=5, norm=norm)

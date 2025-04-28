@@ -178,9 +178,12 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
 
 # }}}
 
-def get_mps(output_dir, nikki, mconfig):
+def get_mps(output_dir, nikki, mconfig, l_cic, var1_str="", var2_str=""):
     # get microphysics scheme name
-    mps = os.listdir(output_dir + nikki + '/' + mconfig)
+    if l_cic:
+        mps = os.listdir(output_dir + nikki + '/' + mconfig)
+    else:
+        mps = os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_str + '/' + var2_str)
     nmp = len(mps)
     return mps, nmp
 
