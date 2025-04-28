@@ -35,19 +35,19 @@ if gpus:
 
 # time.sleep(600)
 
-case_name = 'condcoll'
+case_name = 'condevp_withcoal'
 base_path = '/home/arthurhu/BOSS_PPE/PPE csv/'
-ppe_params_fn = case_name + '_r0_nopartition_ppe_params.csv'
-ppe_sim_fn = case_name + '_r0_nopartition_LWP1234_ppe_var.csv'
+ppe_params_fn = case_name + '_ppe_params.csv'
+ppe_sim_fn = case_name + '_LWP1234_ppe_var.csv'
 target_var_fn = case_name + '_LWP1234_target_var.csv'
 
 param_all_idx = np.arange(40)
 # REVIEW: check every time if this is true ... not sure how to implement this programatically
 # param_interest_idx = np.arange(16,28)
 # param_interest_idx = np.arange(40)
-param_interest_idx = np.arange(16,28)
+# param_interest_idx = np.arange(16,28)
 # param_interest_idx = np.arange(12)
-# param_interest_idx = np.concatenate((np.arange(0,4), np.arange(25,35)))
+param_interest_idx = np.concatenate((np.arange(0,8), np.arange(16,28)))
 param_not_int_idx = [i for i in param_all_idx if i not in param_interest_idx]
 
 param_train = ef.get_params(base_path, ppe_params_fn, param_interest_idx)
@@ -142,7 +142,7 @@ _, _, y_train, y_val = mod_sec.train_test_split(x_all, y_all, test_size=0.2, ran
 y_train = np.nan_to_num(y_train, nan=-1001)
 y_val = np.nan_to_num(y_val, nan=-1001)
 
-proj_name = 'try29_condcoll_fullmom_just_adam_asinh_shared'
+proj_name = 'try31_condcoll_fullmom_just_adam_asinh_shared'
 
 # tuner = kt.Hyperband(
 #     lambda hp: tu.build_classreg_model(hp, npar, nobs),
@@ -186,56 +186,56 @@ tuner.search(
     callbacks=([stop_early])
 )
 
-# # Retrieve the best hyperparameters and build the best model:
-# best_hp = tuner.get_best_hyperparameters(num_trials=1)[0]
-# best_model = tuner.hypermodel.build(best_hp)
+# Retrieve the best hyperparameters and build the best model:
+best_hp = tuner.get_best_hyperparameters(num_trials=1)[0]
+best_model = tuner.hypermodel.build(best_hp)
 
 
-# best_model.summary()
+best_model.summary()
 
-# # stop_early = keras.callbacks.EarlyStopping(monitor='val_presence_accuracy', mode='max', patience=10)
+# stop_early = keras.callbacks.EarlyStopping(monitor='val_presence_accuracy', mode='max', patience=10)
 
-# class PrintDot(keras.callbacks.Callback):
-#     def on_epoch_end(self, epoch, logs):
-#         if epoch % 100 == 0: print('')
-#         print('.', end='')
+class PrintDot(keras.callbacks.Callback):
+    def on_epoch_end(self, epoch, logs):
+        if epoch % 100 == 0: print('')
+        print('.', end='')
 
-# train_dataset = tf.data.Dataset.from_tensor_slices((x_train, {'presence': y_train_wpresence, 'water': y_train}))
-# train_dataset = (train_dataset
-#                  .shuffle(buffer_size=len(x_train))
-#                  .cache()
-#                  .batch(64)
-#                  .prefetch(tf.data.AUTOTUNE))
+train_dataset = tf.data.Dataset.from_tensor_slices((x_train, {'presence': y_train_wpresence, 'water': y_train}))
+train_dataset = (train_dataset
+                 .shuffle(buffer_size=len(x_train))
+                 .cache()
+                 .batch(64)
+                 .prefetch(tf.data.AUTOTUNE))
 
-# val_dataset = tf.data.Dataset.from_tensor_slices((x_val, {'presence': y_val_wpresence, 'water': y_val}))
-# val_dataset = (val_dataset
-#                .cache()
-#                .batch(64)
-#                .prefetch(tf.data.AUTOTUNE))
+val_dataset = tf.data.Dataset.from_tensor_slices((x_val, {'presence': y_val_wpresence, 'water': y_val}))
+val_dataset = (val_dataset
+               .cache()
+               .batch(64)
+               .prefetch(tf.data.AUTOTUNE))
 
 
-# history = best_model.fit(
-#     train_dataset,
-#     epochs=20000,
-#     verbose=0,
-#     validation_data=val_dataset,
-#     callbacks=[TqdmCallback(verbose=1)]
-#     # callbacks=[PrintDot()]
-# )
+history = best_model.fit(
+    train_dataset,
+    epochs=20000,
+    verbose=0,
+    validation_data=val_dataset,
+    callbacks=[TqdmCallback(verbose=1)]
+    # callbacks=[PrintDot()]
+)
 
-# plt.figure()
-# plt.plot(history.epoch, history.history['presence_accuracy'], label='Training')
-# plt.plot(history.epoch, history.history['val_presence_accuracy'], label='Validation')
-# plt.ylabel('Water Presence Accuracy')
-# plt.legend()
-# plt.savefig('plots/condcoll_model_WPA_' + proj_name + '.pdf')
+plt.figure()
+plt.plot(history.epoch, history.history['presence_accuracy'], label='Training')
+plt.plot(history.epoch, history.history['val_presence_accuracy'], label='Validation')
+plt.ylabel('Water Presence Accuracy')
+plt.legend()
+plt.savefig('plots/condcoll_model_WPA_' + proj_name + '.pdf')
 
-# plt.figure()
-# plt.plot(history.epoch, history.history['water_loss'], label='Training')
-# plt.plot(history.epoch, history.history['val_water_loss'], label='Validation')
-# plt.ylabel('Water Content Loss')
-# plt.legend()
-# plt.savefig('plots/condcoll_model_WCL_' + proj_name + '.pdf')
+plt.figure()
+plt.plot(history.epoch, history.history['water_loss'], label='Training')
+plt.plot(history.epoch, history.history['val_water_loss'], label='Validation')
+plt.ylabel('Water Content Loss')
+plt.legend()
+plt.savefig('plots/condcoll_model_WCL_' + proj_name + '.pdf')
 
-# # save model:
-# best_model.save('models/multioutput_' + proj_name + '.keras')
+# save model:
+best_model.save('models/multioutput_' + proj_name + '.keras')

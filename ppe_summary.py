@@ -9,17 +9,17 @@ import pickle
 import re
 
 vnum = '0001'
-nikki = '2025-03-30'
-sim_config = 'condcoll_r0_nopartition'
-target_simconfig = 'condcoll'
+nikki = '2025-04-24'
+sim_config = 'fullmic_Psed'
+target_simconfig = 'fullmic'
 csv_dir = 'PPE csv/'
 
 var1_strs, var2_strs = lp.get_dics(lp.output_dir, 'target', target_simconfig)
 mps, nmp = lp.get_mps(lp.output_dir, nikki, sim_config)
 mps = lp.sort_strings_by_number(mps)
 # condevp
-snapshot_var_idx = [116, 117, 118]
-summary_var_idx = [107, 121, 122]
+snapshot_var_idx = [9, 115, 116, 117, 118]
+summary_var_idx = [108, 95, 107, 121, 122]
 # snapshot_var_idx = [115, 116]
 # summary_var_idx = [95, 107]
 # condcoll:

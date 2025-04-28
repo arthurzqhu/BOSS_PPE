@@ -13,9 +13,9 @@ from matplotlib.colors import LogNorm
 
 
 vnum='0001'
-nikki = '2025-04-01'
-sim_config = 'condcoll_r1_RWM'
-target_simconfig = 'condcoll'
+nikki = '2025-04-28'
+sim_config = 'fullmic_Psed_r1_RWM'
+target_simconfig = 'fullmic'
 
 plot_dir = 'plots/' + nikki + '/' + sim_config + '/'
 if not os.path.exists(plot_dir):
@@ -28,7 +28,7 @@ mps, nmp = lp.get_mps(lp.output_dir, nikki, sim_config)
 mps = lp.sort_strings_by_number(mps)
 
 # var_interest = [106, 107] # see lp.indvar_ename_set
-var_interest = [95, 107, 121, 122] # see lp.indvar_ename_set
+var_interest = [108, 95, 107, 121, 122] # see lp.indvar_ename_set
 # var_interest = [2,3,4,9] # see lp.indvar_ename_set
 indvar_names = [lp.indvar_name_set[idx] for idx in var_interest]
 indvar_enames = [lp.indvar_ename_set[idx] for idx in var_interest]
