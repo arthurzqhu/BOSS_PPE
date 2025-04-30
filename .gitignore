@@ -14,3 +14,5 @@ condcoll_sd.keras
 mcmc_test_linear.png
 mcmc_test_linear2.png
 output.png
+
+.DS_Store
