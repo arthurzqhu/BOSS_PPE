@@ -3,6 +3,7 @@ import re
 import numpy as np
 import netCDF4 as nc
 from glob import glob
+import platform
 
 # constants: {{{
 split_bins = [15, 14]
@@ -11,7 +12,10 @@ M3toQ = np.pi/6*1e3
 QtoM3 = 1/M3toQ
 ampORbin = ['amp', 'bin']
 bintype = ['tau', 'sbm']
-output_dir = '/data1/arthurhu/KiD_output/'
+if 'macOS' in platform.platform():
+    output_dir = '/Volumes/ESSD/research/KiD_output/'
+elif 'Linux' in platform.platform():
+    output_dir = '/pscratch/sd/a/arthurhu/KiD_output/'
 
 initvarSet = ['Na','w','dm','rh','sp','mc','cm','dmr','pmomx','pmomy','spc','spr',
    'pmomxy','dz','Na','spcr','sprc'];

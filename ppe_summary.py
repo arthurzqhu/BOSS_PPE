@@ -1,4 +1,4 @@
-#!/home/arthurhu/BOSS_PPE/.venv/bin/python
+#!.venv/bin/python
 
 import load_ppe_fun as lp
 from tqdm import tqdm
@@ -9,17 +9,18 @@ import pickle
 import re
 
 vnum = '0001'
-nikki = '2025-04-24'
-sim_config = 'fullmic_Psed'
-target_simconfig = 'fullmic'
+nikki = '2025-04-29'
+sim_config = 'condcoll'
+target_simconfig = 'condcoll'
 csv_dir = 'PPE csv/'
+l_cic = True
 
 var1_strs, var2_strs = lp.get_dics(lp.output_dir, 'target', target_simconfig)
-mps, nmp = lp.get_mps(lp.output_dir, nikki, sim_config)
+mps, nmp = lp.get_mps(lp.output_dir, nikki, sim_config, l_cic)
 mps = lp.sort_strings_by_number(mps)
 # condevp
-snapshot_var_idx = [9, 115, 116, 117, 118]
-summary_var_idx = [108, 95, 107, 121, 122]
+snapshot_var_idx = [115, 116, 117, 118]
+summary_var_idx = [95, 107, 121, 122]
 # snapshot_var_idx = [115, 116]
 # summary_var_idx = [95, 107]
 # condcoll:

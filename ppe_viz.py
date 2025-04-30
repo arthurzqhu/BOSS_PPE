@@ -1,4 +1,4 @@
-#!/home/arthurhu/BOSS_PPE/.venv/bin/python
+#!.venv/bin/python
 import load_ppe_fun as lp
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,9 +13,9 @@ from matplotlib.colors import LogNorm
 
 
 vnum='0001'
-nikki = '2025-04-28'
+nikki = '2025-04-29'
 sim_config = 'condcoll'
-l_cic = False
+l_cic = True
 # sim_config = 'fullmic_Psed_r1_HMC'
 target_simconfig = 'condcoll'
 
@@ -30,8 +30,8 @@ mps, nmp = lp.get_mps(lp.output_dir, nikki, sim_config, l_cic, var1_strs[0], var
 mps = lp.sort_strings_by_number(mps)
 
 # var_interest = [106, 107] # see lp.indvar_ename_set
-# var_interest = [108, 95, 107, 121, 122] # see lp.indvar_ename_set
-var_interest = [2,3,4] # see lp.indvar_ename_set
+var_interest = [95, 107, 121, 122] # see lp.indvar_ename_set
+# var_interest = [2,3,4] # see lp.indvar_ename_set
 indvar_names = [lp.indvar_name_set[idx] for idx in var_interest]
 indvar_enames = [lp.indvar_ename_set[idx] for idx in var_interest]
 indvar_units = [lp.indvar_units_set[idx] for idx in var_interest]
@@ -55,17 +55,17 @@ if os.path.isfile(nc_summary_pkl_fn):
     # with open(data_range_pkl_fn, 'rb') as file:
     #     data_range = pickle.load(file)
 else:
-    for var1_str in var1_strs:
-        for var2_str in var2_strs:
+    # for var1_str in var1_strs:
+    #     for var2_str in var2_strs:
     # send in the var_strs anyway to get the perturbed IC from global attributes
-            file_info.update({'sim_config': sim_config, 
-                              'var1_str': var1_str, 
-                              'var2_str': var2_str})
+    file_info.update({'sim_config': sim_config, 
+                      'var1_str': var1_strs[0], 
+                      'var2_str': var2_strs[0]})
 
-            for imp, mp in enumerate(mps):
-            # for imp, mp in enumerate(tqdm(mps, desc='loading PPEs')):
-                file_info['mp_config'] = mp
-                nc_dict = lp.load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic=l_cic)[0]
+    # for imp, mp in enumerate(mps):
+    for imp, mp in enumerate(tqdm(mps, desc='loading PPEs')):
+        file_info['mp_config'] = mp
+        nc_dict = lp.load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic=l_cic)[0]
 
     with open(nc_summary_pkl_fn, 'wb') as file:
         pickle.dump(nc_dict, file)
