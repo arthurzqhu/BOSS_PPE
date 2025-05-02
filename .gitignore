@@ -16,3 +16,4 @@ mcmc_test_linear2.png
 output.png
 
 .DS_Store
+*.nc

@@ -13,11 +13,10 @@ from matplotlib.colors import LogNorm
 
 
 vnum='0001'
-nikki = '2025-04-29'
-sim_config = 'condcoll'
+nikki = '2025-04-22'
+sim_config = 'condevp_withcoal'
 l_cic = True
-# sim_config = 'fullmic_Psed_r1_HMC'
-target_simconfig = 'condcoll'
+target_simconfig = 'condevp_withcoal'
 
 plot_dir = 'plots/' + nikki + '/' + sim_config + '/'
 if not os.path.exists(plot_dir):

@@ -123,16 +123,16 @@ indvar_ename_set = ['CWC','RWC', #1
                     'theta','LNP', 'dn liq by coll', #87
                     'dmx liq by coll', 'dmy liq by coll', #89
                     'dn liq by nuc', 'dn liq by evap', #91
-                    'peak rain rate', 'peak RR time', 'LWP half-life', 'mean LWP', #95
+                    'peak rain rate', 'peak RR time', 'LWP half-life', 'mean_LWP', #95
                     'mean D_w', 'dn by sed', 'dmx by sed', 'dmy by sed', #99
                     'boss dm sed','boss dn sed','boss dmx sed','boss dmy sed', #103
-                    'M6 liq','M9 liq', 'mean RWP', 'mean LNP', #107
+                    'M6 liq','M9 liq', 'mean RWP', 'mean_LNP', #107
                     'mean rain rate', 'mean CWP', 'DSDm', 'DSDn', #111
                     'temperature', 'pressure', 'reff', #114
                     'liq_M1', 'liq_M2', #116
                     'liq_M3', 'liq_M4', #118
                     'liq_M3_path', 'liq_M4_path', #120
-                    'mean M3_path', 'mean M4_path', #122
+                    'mean_M3_path', 'mean_M4_path', #122
                     ]
 
 indvar_units_set = [' [kg/kg]',' [kg/kg]',
@@ -182,19 +182,27 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
 
 # }}}
 
+
+def filter_DS_Store(file_list):
+    return list(filter(lambda x: x != '.DS_Store', file_list))
+
 def get_mps(output_dir, nikki, mconfig, l_cic, var1_str="", var2_str=""):
     # get microphysics scheme name
     if l_cic:
-        mps = os.listdir(output_dir + nikki + '/' + mconfig)
+        # mps = os.listdir(output_dir + nikki + '/' + mconfig)
+        mps = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig))
     else:
-        mps = os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_str + '/' + var2_str)
+        # mps = os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_str + '/' + var2_str)
+        mps = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig + var1_str + '/' + var2_str))
     nmp = len(mps)
     return mps, nmp
 
 def get_dics(output_dir, nikki, mconfig): 
     # get discrete initial conditions from BIN
-    var1_strs = os.listdir(output_dir + nikki + '/' + mconfig)
-    var2_strs = os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_strs[0])
+    var1_strs = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig))
+    var2_strs = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_strs[0]))
+    # var1_strs = os.listdir(output_dir + nikki + '/' + mconfig)
+    # var2_strs = os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_strs[0])
     return var1_strs, var2_strs
 
 def sort_strings_by_number(strings):
@@ -307,15 +315,15 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
                 output_data = raw_data['time'][LWP_imax + idx_after_max] - raw_data['time'][LWP_imax]
         case 'mean CWP' | 'mean RWP':
             output_data = np.mean(raw_data[var_name])
-        case 'mean LWP':
+        case 'mean_LWP':
             output_data = np.mean(raw_data['rain_M1_path'] + raw_data['cloud_M1_path'])
-        case 'mean LNP':
+        case 'mean_LNP':
             output_data = np.mean(raw_data['rain_M2_path'] + raw_data['cloud_M2_path'])
         case 'mean rain rate':
             output_data = np.mean(raw_data[var_name])
         case 'liq_M1' | 'liq_M2' | 'liq_M3' | 'liq_M4' | 'liq_M3_path' | 'liq_M4_path' :
             output_data = raw_data[var_name[0]] + raw_data[var_name[1]]
-        case 'mean M3_path' | 'mean M4_path':
+        case 'mean_M3_path' | 'mean_M4_path':
             output_data = np.mean(raw_data[var_name[0]] + raw_data[var_name[1]])
     # }}}
             

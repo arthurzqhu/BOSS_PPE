@@ -10,9 +10,11 @@ import re
 
 vnum = '0001'
 nikki = '2025-04-29'
-sim_config = 'condcoll'
-target_simconfig = 'condcoll'
-csv_dir = 'PPE csv/'
+sim_config = 'condevp_withcoal'
+target_simconfig = 'condevp_withcoal'
+nc_dir = 'summary_ncs/'
+if not os.path.exists(nc_dir):
+    os.makedirs(nc_dir)
 l_cic = True
 
 var1_strs, var2_strs = lp.get_dics(lp.output_dir, 'target', target_simconfig)
@@ -145,8 +147,8 @@ for var1_str in var1_strs:
 
 ppe_df = pd.DataFrame(ppe_var).T
 target_df = pd.concat(target_dfs)
-ppe_df.to_csv(csv_dir + sim_config + "_LWP1234_ppe_var.csv")
-target_df.to_csv(csv_dir + target_simconfig + "_LWP1234_target_var.csv")
+# ppe_df.to_csv(csv_dir + sim_config + "_LWP1234_ppe_var.csv")
+# target_df.to_csv(csv_dir + target_simconfig + "_LWP1234_target_var.csv")
 
 # read the parameters
 # param_dfs = []
@@ -165,4 +167,4 @@ param_df.insert(loc=0, column=var2_vn, value=var2_val)
 param_df.insert(loc=0, column=var1_vn, value=var1_val)
 param_df.index = mps
 
-param_df.to_csv(csv_dir + sim_config + "_ppe_params.csv")
+# param_df.to_csv(csv_dir + sim_config + "_ppe_params.csv")
