@@ -17,3 +17,4 @@ output.png
 
 .DS_Store
 *.nc
+.ipynb_checkpoints

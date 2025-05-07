@@ -186,35 +186,37 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
 def filter_DS_Store(file_list):
     return list(filter(lambda x: x != '.DS_Store', file_list))
 
-def get_mps(output_dir, nikki, mconfig, l_cic, var1_str="", var2_str=""):
+def get_dics(output_dir, nikki, mconfig, n_init): 
+    # get discrete initial conditions from BIN
+    vars_strs = []
+    mconfig_dir = output_dir + nikki + '/' + mconfig + '/'
+    for i_init in range(n_init):
+        var_strs = sort_strings_by_number(os.listdir(mconfig_dir))
+        vars_strs.append(var_strs)
+        mconfig_dir += var_strs[0]
+    return vars_strs
+
+def get_mps(output_dir, nikki, mconfig, l_cic, vars_strs):
     # get microphysics scheme name
     if l_cic:
-        # mps = os.listdir(output_dir + nikki + '/' + mconfig)
         mps = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig))
     else:
-        # mps = os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_str + '/' + var2_str)
-        mps = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig + var1_str + '/' + var2_str))
+        vars_dir = "/".join([istr[0] for istr in vars_strs])
+        mps = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig + '/' + vars_dir))
     nmp = len(mps)
     return mps, nmp
-
-def get_dics(output_dir, nikki, mconfig): 
-    # get discrete initial conditions from BIN
-    var1_strs = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig))
-    var2_strs = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_strs[0]))
-    # var1_strs = os.listdir(output_dir + nikki + '/' + mconfig)
-    # var2_strs = os.listdir(output_dir + nikki + '/' + mconfig + '/' + var1_strs[0])
-    return var1_strs, var2_strs
 
 def sort_strings_by_number(strings):
     """
     Sorts strings by their last numeric substring.
     e.g. ["a1", "a25", "a100"] becomes ["a1", "a25", "a100"] (sorted by 1, 25, 100).
     """
+    float_re = re.compile(r'(\d+(?:\.\d+)?)$')  # match digits, optional .digits, at end
+    
     def numeric_key(s):
         # Find the first sequence of digits in the string
-        match = re.search(r'(\d+)$', s)
-        # Convert the digits to integer; default to 0 if no digits found
-        return int(match.group(1)) if match else 0
+        m = float_re.search(s)
+        return float(m.group(1)) if m else 0.0
     return sorted(strings, key=numeric_key)
 
 def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
@@ -356,21 +358,18 @@ def load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic,
 
     # files are put below two extra layers of initial condition directory so need to check
     # before loading
-    var1_vn = re.search(r'^[A-Z]*[a-z]*', file_info['var1_str'])[0]
-    var2_vn = re.search(r'^[A-Z]*[a-z]*', file_info['var2_str'])[0]
+    vars_vn = file_info['vars_vn']
+    
     if continuous_ic:
         filedir = file_info['dir'] + file_info['date'] +'/'+ file_info['sim_config'] +'/'+ \
                 mp +'/'+ 'KiD_m-*c-010*_v-' + file_info['version_number'] + '.nc'
         ic_str = 'cic' # = continuous initial condition
     else:
-        ic_str = file_info['var1_str'] + file_info['var2_str']
+        ic_str = "".join(file_info['vars_str'])
+        vars_dir = "/".join([istr for istr in file_info['vars_str']])
         filedir = file_info['dir'] + file_info['date'] +'/'+ file_info['sim_config'] +'/'+ \
-                file_info['var1_str'] +'/'+ file_info['var2_str'] +'/'+ \
-                mp +'/'+ 'KiD_m-*c-010*_v-' + file_info['version_number'] + '.nc'
-        var1_val = float(re.search(r'(\d+)$', file_info['var1_str'])[0])
-        var2_val = float(re.search(r'(\d+)$', file_info['var2_str'])[0])
-
-
+                vars_dir +'/'+ mp +'/'+ 'KiD_m-*c-010*_v-' + file_info['version_number'] + '.nc'
+        
     try:
         filedir = glob(filedir)[0]
     except IndexError:
@@ -384,13 +383,9 @@ def load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic,
     data_range.setdefault(ic_str, {})
 
     # get initial conditions
-    # if continuous_ic:
-    nc_dict[ic_str][mp][var1_vn] = dataset.getncattr(var1_vn)
-    nc_dict[ic_str][mp][var2_vn] = dataset.getncattr(var2_vn)[0]
-    # else:
-    #     nc_dict[ic_str][mp][var1_vn] = var1_val
-    #     nc_dict[ic_str][mp][var2_vn] = var2_val
-
+    for vn in vars_vn:
+        nc_dict[ic_str][mp][vn] = dataset.getncattr(vn)
+        
     for ivar in var_interest:
         var_name = indvar_name_set[ivar]
         var_ename = indvar_ename_set[ivar]

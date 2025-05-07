@@ -9,10 +9,18 @@ import sklearn.model_selection as mod_sec
 
 def get_params(basepath, filename, param_interest_idx):
     dataset = nc.Dataset(basepath + filename, mode='r')
-    Na_PPE = np.expand_dims(dataset.variables['Na_PPE'][:], axis=1)
-    w_PPE = np.expand_dims(dataset.variables['w_PPE'][:], axis=1)
-    params_PPE = dataset.variables['params_PPE'][:]
-    params_train = np.concatenate((Na_PPE, w_PPE, params_PPE[:, param_interest_idx]), axis=1)
+    vars_vn = dataset.getncattr('init_var')
+    if isinstance(vars_vn, str):
+        vars_vn = [vars_vn]
+    PPE_vns = [istr + "_PPE" for istr in vars_vn]
+    initvar_matrix = []
+    
+    for PPE_vn in PPE_vns:
+        initvar_matrix.append(np.expand_dims(dataset.variables[PPE_vn][:], axis=1))
+    
+    params_PPE = dataset.variables['params_PPE'][:][:, np.arange(28,40)]
+    initvar_matrix.append(params_PPE)
+    params_train = np.concatenate(initvar_matrix, axis=1)
 
     return {'pnames': dataset.variables['param_names'][:],
             'vals': params_train}
