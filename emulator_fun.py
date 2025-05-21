@@ -18,7 +18,7 @@ def get_params(basepath, filename, param_interest_idx):
     for PPE_vn in PPE_vns:
         initvar_matrix.append(np.expand_dims(dataset.variables[PPE_vn][:], axis=1))
     
-    params_PPE = dataset.variables['params_PPE'][:][:, np.arange(28,40)]
+    params_PPE = dataset.variables['params_PPE'][:][:, param_interest_idx]
     initvar_matrix.append(params_PPE)
     params_train = np.concatenate(initvar_matrix, axis=1)
 
