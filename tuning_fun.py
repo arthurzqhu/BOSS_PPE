@@ -128,18 +128,18 @@ def build_classreg_model(hp, npar, nobs):
     
     # Choose the optimizer as a hyperparameter
     # optimizer_choice = hp.Choice('optimizer', values=['rmsprop'])
-    optimizer_choice = hp.Choice('optimizer', values=['adam', 'sgd', 'rmsprop'])
+    # optimizer_choice = hp.Choice('optimizer', values=['adam', 'sgd', 'rmsprop'])
     
-    if optimizer_choice == 'adam':
-        lr = hp.Float('adam_lr', 1e-6, 1e-2, sampling='LOG')
-        optimizer = keras.optimizers.Adam(learning_rate=lr)
-    elif optimizer_choice == 'sgd':
-        lr = hp.Float('sgd_lr', 1e-6, 1e-2, sampling='LOG')
-        momentum = hp.Float('sgd_momentum', 0.0, 0.9, step=0.1)
-        optimizer = keras.optimizers.SGD(learning_rate=lr, momentum=momentum)
-    else:  # rmsprop
-        lr = hp.Float('rmsprop_lr', 1e-6, 1e-2, sampling='LOG')
-        optimizer = keras.optimizers.RMSprop(learning_rate=lr)
+    # if optimizer_choice == 'adam':
+    lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
+    optimizer = keras.optimizers.Adam(learning_rate=lr)
+    # elif optimizer_choice == 'sgd':
+    #     lr = hp.Float('sgd_lr', 1e-6, 1e-2, sampling='LOG')
+    #     momentum = hp.Float('sgd_momentum', 0.0, 0.9, step=0.1)
+    #     optimizer = keras.optimizers.SGD(learning_rate=lr, momentum=momentum)
+    # else:  # rmsprop
+    #     lr = hp.Float('rmsprop_lr', 1e-6, 1e-2, sampling='LOG')
+    #     optimizer = keras.optimizers.RMSprop(learning_rate=lr)
     
     model.compile(
         optimizer=optimizer,

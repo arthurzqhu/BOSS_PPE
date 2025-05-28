@@ -4,6 +4,7 @@ import numpy as np
 import netCDF4 as nc
 from glob import glob
 import platform
+import socket
 
 # constants: {{{
 split_bins = [15, 14]
@@ -15,7 +16,15 @@ bintype = ['tau', 'sbm']
 if 'macOS' in platform.platform():
     output_dir = '/Volumes/ESSD/research/KiD_output/'
 elif 'Linux' in platform.platform():
-    output_dir = '/pscratch/sd/a/arthurhu/KiD_output/'
+    hostname = socket.gethostname()
+    if hostname == "simurgh":
+        output_dir = '/data1/arthurhu/KiD_output/'
+        nc_dir = '/home/arthurhu/BOSS_PPE/summary_ncs/'
+        bossppe_dir = '/home/arthurhu/BOSS_PPE/'
+    else:
+        output_dir = '/pscratch/sd/a/arthurhu/KiD_output/'
+        nc_dir = '/pscratch/sd/a/arthurhu/BOSS_PPE/summary_ncs/'
+        bossppe_dir = '/pscratch/sd/a/arthurhu/BOSS_PPE/'
 
 initvarSet = ['Na','w','dm','rh','sp','mc','cm','dmr','pmomx','pmomy','spc','spr',
    'pmomxy','dz','Na','spcr','sprc'];
@@ -89,6 +98,11 @@ indvar_name_set = ['diagM3_cloud','diagM3_rain',
                    ['cloud_M3', 'rain_M3'], ['cloud_M4', 'rain_M4'],
                    ['cloud_M3_path', 'rain_M3_path'], ['cloud_M4_path', 'rain_M4_path'],
                    ['cloud_M3_path', 'rain_M3_path'], ['cloud_M4_path', 'rain_M4_path'],
+                   'dn_sed', 'dm_sed', 'dm6_sed', 'dm9_sed', 
+                   ['cloud_M2', 'rain_M2'], ['cloud_M1', 'rain_M1'],
+                   ['cloud_M3', 'rain_M3'], ['cloud_M4', 'rain_M4'],
+                   'V_nc', 'V_qc', 'V_qx', 'V_qy',
+                   'V_nc', 'V_qc', 'V_qx', 'V_qy',
                    ]
 
 indvar_ename_set = ['CWC','RWC', #1
@@ -133,6 +147,10 @@ indvar_ename_set = ['CWC','RWC', #1
                     'liq_M3', 'liq_M4', #118
                     'liq_M3_path', 'liq_M4_path', #120
                     'mean_M3_path', 'mean_M4_path', #122
+                    'mean_M0_sed', 'mean_M3_sed', 'mean_Mx_sed', 'mean_My_sed', #126
+                    'mean_M0', 'mean_M3', 'mean_Mx', 'mean_My', #130
+                    'mean_V_nc', 'mean_V_qc', 'mean_V_qx', 'mean_V_qy', #134
+                    'V_nc', 'V_qc', 'V_qx', 'V_qy', #138
                     ]
 
 indvar_units_set = [' [kg/kg]',' [kg/kg]',
@@ -178,6 +196,11 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
                     ' [$m^3$/$m^2$]', ' [1/$m^2$]',
                     ' [$m^6$/$m^2$]', ' [$m^9$/$m^2$]',
                     ' [$m^6$/$m^2$]', ' [$m^9$/$m^2$]',
+                    ' [kg/kg/s]', ' [#/kg/s]', ' [m^x/kg/s]', ' [m^y/kg/s]',
+                    ' [1/$m^2$]', ' [$m^3$/$m^2$]',
+                    ' [$m^6$/$m^2$]', ' [$m^9$/$m^2$]',
+                    ' [m/s]', ' [m/s]', ' [m/s]', ' [m/s]', 
+                    ' [m/s]', ' [m/s]', ' [m/s]', ' [m/s]', 
                     ]
 
 # }}}
@@ -221,11 +244,16 @@ def sort_strings_by_number(strings):
 
 def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
     """convert raw_data into useful physical variables"""
-    if type(var_name) == str:
-        output_data = raw_data[var_name]
     lin_or_log = 'log'
     threshold = 0.
     data_range = None
+
+    if type(var_name) == str:
+        if 'mean' in var_ename:
+            filtered_data = raw_data[var_name][raw_data[var_name]>=threshold]
+            output_data = np.mean(filtered_data)
+        else:
+            output_data = raw_data[var_name]
 
     # laundry list of variables: {{{
     match var_ename:
@@ -283,14 +311,14 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
             data_range = [30, 100];
             lin_or_log = 'linear';
         case 'peak rain rate':
-            output_data = max(raw_data[var_name])
+            output_data = np.nanmax(raw_data[var_name])
         case 'peak RR time':
-            idx = np.argmax(raw_data['mean_surface_ppt'])
+            idx = np.nanargmax(raw_data['mean_surface_ppt'])
             output_data = raw_data['time'][idx]
             if idx == 0:
                 output_data = raw_data['time'][-1]
         case 'cloud half-life':
-            idx = np.argmax(raw_data['cloud_M1_path']<raw_data['rain_M1_path'])
+            idx = np.nanargmax(raw_data['cloud_M1_path']<raw_data['rain_M1_path'])
             output_data = raw_data['time'][idx]
             if idx == 0:
                 dt = raw_data['time'][1] - raw_data['time'][0]
@@ -308,31 +336,30 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
                 # output_data = raw_data['time'][-1]*2
         case 'LWP half-life':
             LWP = raw_data['cloud_M1_path'] + raw_data['rain_M1_path']
-            LWP_max = max(LWP)
-            LWP_imax = np.argmax(LWP)
-            idx_after_max = np.argmax(np.array(LWP[LWP_imax:]) <= LWP_max / 2)
+            LWP_max = np.nanmax(LWP)
+            LWP_imax = np.nanargmax(LWP)
+            idx_after_max = np.nanargmax(np.array(LWP[LWP_imax:]) <= LWP_max / 2)
             if idx_after_max == 0:
                 output_data = raw_data['time'][-1]*2
             else:
                 output_data = raw_data['time'][LWP_imax + idx_after_max] - raw_data['time'][LWP_imax]
-        case 'mean CWP' | 'mean RWP':
-            output_data = np.mean(raw_data[var_name])
         case 'mean_LWP':
-            output_data = np.mean(raw_data['rain_M1_path'] + raw_data['cloud_M1_path'])
+            output_data = np.nanmean(raw_data['rain_M1_path'] + raw_data['cloud_M1_path'])
         case 'mean_LNP':
-            output_data = np.mean(raw_data['rain_M2_path'] + raw_data['cloud_M2_path'])
-        case 'mean rain rate':
-            output_data = np.mean(raw_data[var_name])
+            output_data = np.nanmean(raw_data['rain_M2_path'] + raw_data['cloud_M2_path'])
         case 'liq_M1' | 'liq_M2' | 'liq_M3' | 'liq_M4' | 'liq_M3_path' | 'liq_M4_path' :
             output_data = raw_data[var_name[0]] + raw_data[var_name[1]]
         case 'mean_M3_path' | 'mean_M4_path':
-            output_data = np.mean(raw_data[var_name[0]] + raw_data[var_name[1]])
+            output_data = np.nanmean(raw_data[var_name[0]] + raw_data[var_name[1]])
+        case 'mean_M0' | 'mean_M3' | 'mean_Mx' | 'mean_My':
+            output_data = np.nanmean(raw_data[var_name[0]] + raw_data[var_name[1]])
+
     # }}}
-            
+
     if set_OOB_as_NaN:
         try:
             output_data[output_data<threshold] = np.nan
-        except TypeError:
+        except:
             if output_data<threshold:
                 output_data = np.nan
 
