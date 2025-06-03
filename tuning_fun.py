@@ -7,6 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow.keras.backend as K
 from tensorflow.keras.losses import Loss
+import numpy as np
 
 def build_regressor_model(hp, npar, nobs):
     model = keras.Sequential()
@@ -68,41 +69,11 @@ class MaskedMSE(Loss):
         config.update({"threshold": self.threshold})
         return config
 
-# def masked_mse_loss(threshold=-999):
-#     def loss(y_true, y_pred):
-#         # Create a mask: 1 when y_true > threshold, 0 otherwise
-#         mask = K.cast(K.greater(y_true, threshold), K.floatx())
-#         # Compute squared error and multiply by the mask
-#         squared_error = K.square(y_true - y_pred)
-#         masked_error = squared_error * mask
-#         # Return the mean error over the active positions
-#         # (adding a small epsilon to avoid division by zero)
-#         return K.sum(masked_error) / (K.sum(mask) + K.epsilon())
-#     return loss
-
-def build_classifier_model(hp, npar, nobs):
-    model = keras.Sequential()
-    for i in range(hp.Int('num_layers', 1, 4)):
-        # Tune the number of units for each layer.
-        units = hp.Int(f'units_{i}', min_value=32, max_value=256, step=32)
-        if i == 0:
-            model.add(layers.Input(shape=(npar,)))
-        else:
-            model.add(layers.Dense(units, activation='relu'))
-
-        # # tune dropout.
-        # if hp.Boolean(f'dropout_{i}'):
-        #     dropout_rate = hp.Float(f'dropout_rate_{i}', min_value=0, max_value=0.5, step=0.1)
-        #     model.add(layers.Dropout(rate=dropout_rate))
-
-    model.add(layers.Dense(nobs, activation='sigmoid'))
-    
-    model.compile(optimizer=keras.optimizers.Adam(
-                      learning_rate=hp.Float('lr', 1e-5, 1e-2, sampling='LOG')),
-                  loss='binary_crossentropy',
-                  metrics=['accuracy'])
-    return model
-
+# def base_reg_loss(y_true, y_pred, threshold=-999):
+#     mask = K.cast(K.greater(y_true, threshold), K.floatx())
+#     squared_error = K.square(y_true - y_pred)
+#     masked_error = squared_error * mask
+#     return K.sum(masked_error) / (K.sum(mask) + K.epsilon())
 
 def build_classreg_model(hp, npar, nobs):
     inputs = layers.Input(shape=(npar,))
@@ -114,10 +85,6 @@ def build_classreg_model(hp, npar, nobs):
         # Tune number of units for each layer
         units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
         x = layers.Dense(units, activation='relu')(x)
-        # # Optionally add dropout
-        # if hp.Boolean(f"dropout_{i}"):
-        #     dropout_rate = hp.Float(f"dropout_rate_{i}", min_value=0.0, max_value=0.5, step=0.1)
-        #     x = layers.Dropout(rate=dropout_rate)(x)
     
     # Classifier branch: predicts water presence (binary for each of the 7202 outputs)
     presence_output = layers.Dense(nobs, activation='sigmoid', name='presence')(x)
@@ -125,21 +92,8 @@ def build_classreg_model(hp, npar, nobs):
     water_output = layers.Dense(nobs, name='water')(x)
     
     model = keras.Model(inputs=inputs, outputs=[presence_output, water_output])
-    
-    # Choose the optimizer as a hyperparameter
-    # optimizer_choice = hp.Choice('optimizer', values=['rmsprop'])
-    # optimizer_choice = hp.Choice('optimizer', values=['adam', 'sgd', 'rmsprop'])
-    
-    # if optimizer_choice == 'adam':
     lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
     optimizer = keras.optimizers.Adam(learning_rate=lr)
-    # elif optimizer_choice == 'sgd':
-    #     lr = hp.Float('sgd_lr', 1e-6, 1e-2, sampling='LOG')
-    #     momentum = hp.Float('sgd_momentum', 0.0, 0.9, step=0.1)
-    #     optimizer = keras.optimizers.SGD(learning_rate=lr, momentum=momentum)
-    # else:  # rmsprop
-    #     lr = hp.Float('rmsprop_lr', 1e-6, 1e-2, sampling='LOG')
-    #     optimizer = keras.optimizers.RMSprop(learning_rate=lr)
     
     model.compile(
         optimizer=optimizer,
@@ -147,6 +101,70 @@ def build_classreg_model(hp, npar, nobs):
         metrics={'presence': 'accuracy', 'water': 'mae'}
     )
     
+    return model
+
+def total_loss(y_true_list, y_pred_list, lambdas, ngrps=2, nvar=8):
+    L_data = 0.
+    # for y_true, y_pred in zip(y_true_list, y_pred_list):
+    #     L_data += tf.MaskedMSE(threshold=-999)(y_true, y_pred)
+    for i in range(nvar):
+        L_data += tf.reduce_mean(tf.square(y_true_list[i] - y_pred_list[i]))
+    
+    raw_vals = []
+    for igrp in range(ngrps):
+        raw_vals.append(tf.stack([y_pred_list[i] for i in range(igrp*4, (igrp+1)*4)], axis=-1))
+        # raw2 = tf.stack([y_pred_list[i] for i in range(4,8)], axis=-1)  # shape=(batch,4)
+
+    # Compute monotonic penalty for each group:
+    def mono_penalty(raw_group):
+        diffs = raw_group[..., :-1] - raw_group[..., 1:]      # (batch,3)
+        viol  = tf.nn.relu(diffs)                          # (batch,3)
+        return tf.reduce_mean(tf.square(viol))  # scalar
+
+    L_monos = 0.
+    for igrp in range(ngrps):
+        L_monos += lambdas[igrp] * mono_penalty(raw_vals[igrp])
+    # L_monos = np.sum([mono_penalty(raw) for raw in raw_vals])
+    # L_mono2 = mono_penalty(raw2)
+    # Total loss is the sum (or weighted sum) of everything:
+    return L_data + L_monos
+
+def build_multihead_model(hp, npar, nvar, nobs):
+    # npar = inputs
+    # nvar = number of variables (e.g., 8)
+    # nobs = number of observation for each variable (e.g., [1, 1, 1, 1, 720, 720, 720, 720])
+    
+    inputs = layers.Input(shape=(npar,))
+    x = inputs
+
+    # Tune the number of shared layers (e.g., between 1 and 5 layers)
+    num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+    for i in range(num_shared_layers):
+        # Tune number of units for each layer
+        units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
+        x = layers.Dense(units, activation='relu')(x)
+    
+    outputs = []
+    
+    for i in range(nvar):
+        p_i = layers.Dense(nobs[i], activation="sigmoid", name=f"presence_{i}")(x)
+        r_i = layers.Dense(nobs[i], activation="linear", name=f"raw_{i}")(x)
+        combined_i = layers.Multiply(name=f"output_scalar_{i}")([p_i, r_i])
+        outputs.append(combined_i)
+
+    model = keras.Model(inputs=inputs, outputs=outputs)
+    lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
+    optimizer = keras.optimizers.Adam(learning_rate=lr)
+
+    ngrps = nvar // 4  # Assuming each group has 4 outputs bc it's 4M BOSS, adjust as necessary
+    lmono = [hp.Float("lambda_mono", 1e-4, 10.0, sampling="LOG")] * ngrps  # Monotonic penalty weight
+
+    model.compile(
+        optimizer=optimizer,
+        loss=lambda y_true, y_pred: total_loss(y_true, y_pred, lmono, ngrps),
+        metrics=["mae"] * nvar
+    )
+
     return model
 
 class CombinedEarlyStopping(tf.keras.callbacks.Callback):

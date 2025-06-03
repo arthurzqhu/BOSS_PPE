@@ -15,6 +15,8 @@ ampORbin = ['amp', 'bin']
 bintype = ['tau', 'sbm']
 if 'macOS' in platform.platform():
     output_dir = '/Volumes/ESSD/research/KiD_output/'
+    bossppe_dir = '/Users/arthurhu/github/BOSS_PPE/'
+    nc_dir = '/Users/arthurhu/github/BOSS_PPE/summary_ncs/'
 elif 'Linux' in platform.platform():
     hostname = socket.gethostname()
     if hostname == "simurgh":

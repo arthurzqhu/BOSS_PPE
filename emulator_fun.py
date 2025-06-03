@@ -83,4 +83,4 @@ def get_vars(basepath, filename):
 #             'log_vals': var_vals_log[:, slim_down]}
 
 smooth_linlog = lambda y, eff0: eff0*np.arcsinh(y/eff0)
-    
+inv_smooth_linlog = lambda y, eff0: eff0*np.sinh(y/eff0)
