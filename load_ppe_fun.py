@@ -103,8 +103,10 @@ indvar_name_set = ['diagM3_cloud','diagM3_rain',
                    'dn_sed', 'dm_sed', 'dm6_sed', 'dm9_sed', 
                    ['cloud_M2', 'rain_M2'], ['cloud_M1', 'rain_M1'],
                    ['cloud_M3', 'rain_M3'], ['cloud_M4', 'rain_M4'],
-                   'V_nc', 'V_qc', 'V_qx', 'V_qy',
-                   'V_nc', 'V_qc', 'V_qx', 'V_qy',
+                   'V_M0', 'V_M3', 'V_Mx', 'V_My',
+                   'V_M0', 'V_M3', 'V_Mx', 'V_My',
+                   'dn_liq_coll', 'dmx_liq_coll', 'dmy_liq_coll',
+                   ['cloud_M2', 'rain_M2', 'cloud_M1', 'rain_M1']
                    ]
 
 indvar_ename_set = ['CWC','RWC', #1
@@ -145,14 +147,16 @@ indvar_ename_set = ['CWC','RWC', #1
                     'M6 liq','M9 liq', 'mean RWP', 'mean_LNP', #107
                     'mean rain rate', 'mean CWP', 'DSDm', 'DSDn', #111
                     'temperature', 'pressure', 'reff', #114
-                    'liq_M1', 'liq_M2', #116
-                    'liq_M3', 'liq_M4', #118
-                    'liq_M3_path', 'liq_M4_path', #120
-                    'mean_M3_path', 'mean_M4_path', #122
+                    'M3', 'M0', #116
+                    'Mx', 'My', #118
+                    'Mx_path', 'My_path', #120
+                    'mean_Mx_path', 'mean_My_path', #122
                     'mean_M0_sed', 'mean_M3_sed', 'mean_Mx_sed', 'mean_My_sed', #126
                     'mean_M0', 'mean_M3', 'mean_Mx', 'mean_My', #130
-                    'mean_V_nc', 'mean_V_qc', 'mean_V_qx', 'mean_V_qy', #134
-                    'V_nc', 'V_qc', 'V_qx', 'V_qy', #138
+                    'mean_V_M0', 'mean_V_M3', 'mean_V_Mx', 'mean_V_My', #134
+                    'V_M0', 'V_M3', 'V_Mx', 'V_My', #138
+                    'mean_dm0_coal', 'mean_dmx_coal', 'mean_dmy_coal', #141
+                    'mean_dm', #142
                     ]
 
 indvar_units_set = [' [kg/kg]',' [kg/kg]',
@@ -185,24 +189,25 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
                     '','',
                     ' [1/cc]', ' [kg/kg]', ' [m/s]',' [kg/kg]',
                     ' [K]',' [1/m^2]', ' [1/kg/s]', 
-                    ' [m^x/kg/s]', ' [m^y/kg/s]', 
+                    ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
                     ' [1/kg/s]', ' [1/kg/s]', 
                     ' [mm/hr]', ' [s]', ' [s]', ' [kg/$m^2$]', 
-                    r' [\mum]', ' [#/kg/s]', ' [m^x/kg/s]', ' [m^y/kg/s]', 
-                    ' [kg/kg/s]', ' [#/kg/s]', ' [m^x/kg/s]', ' [m^y/kg/s]', 
-                    ' [m^6/kg]', ' [m^9/kg]', ' [kg/$m^2$]', ' [1/$m^2$]', 
+                    r' [\mum]', ' [#/kg/s]', ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
+                    ' [kg/kg/s]', ' [#/kg/s]', ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
+                    ' [$m^6$/kg]', ' [$m^9$/kg]', ' [kg/$m^2$]', ' [1/$m^2$]', 
                     ' [mm/hr]', ' [kg/$m^2$]', ' [kg/kg/ln(r)]', ' [1/kg/ln(r)]',
                     ' [K]', ' [mb]', r' [\mum]',
                     ' [$m^3$/kg]', ' [1/kg]',
                     ' [$m^6$/kg]', ' [$m^9$/kg]',
-                    ' [$m^3$/$m^2$]', ' [1/$m^2$]',
                     ' [$m^6$/$m^2$]', ' [$m^9$/$m^2$]',
                     ' [$m^6$/$m^2$]', ' [$m^9$/$m^2$]',
-                    ' [kg/kg/s]', ' [#/kg/s]', ' [m^x/kg/s]', ' [m^y/kg/s]',
+                    ' [kg/kg/s]', ' [#/kg/s]', ' [$m^x$/kg/s]', ' [$m^y$/kg/s]',
                     ' [1/$m^2$]', ' [$m^3$/$m^2$]',
                     ' [$m^6$/$m^2$]', ' [$m^9$/$m^2$]',
                     ' [m/s]', ' [m/s]', ' [m/s]', ' [m/s]', 
                     ' [m/s]', ' [m/s]', ' [m/s]', ' [m/s]', 
+                    ' [1/kg/s]', ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
+                    ' [m]',
                     ]
 
 # }}}
@@ -250,7 +255,13 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
     threshold = 0.
     data_range = None
 
+    # dn during collision is either nonpositive or nonnegative depending on user definition
+    # threshold is set to negative inf here is temporary and only for PPE emulator training
+    if var_name == "dn_liq_coll":
+        threshold = -np.inf
+        
     if type(var_name) == str:
+        raw_data[var_name][~np.isfinite(raw_data[var_name])] = np.nan
         if 'mean' in var_ename:
             filtered_data = raw_data[var_name][raw_data[var_name]>=threshold]
             output_data = np.mean(filtered_data)
@@ -306,6 +317,8 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
             threshold = sppt_th[0]
             lin_or_log = 'linear'
             data_range = [0, max(output_data)*2]
+        case 'mean rain rate':
+            output_data = np.mean(raw_data[var_name])*3600
         case 'vapour':
             data_range = [.002, .02];
             lin_or_log = 'linear';
@@ -349,12 +362,15 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
             output_data = np.nanmean(raw_data['rain_M1_path'] + raw_data['cloud_M1_path'])
         case 'mean_LNP':
             output_data = np.nanmean(raw_data['rain_M2_path'] + raw_data['cloud_M2_path'])
-        case 'liq_M1' | 'liq_M2' | 'liq_M3' | 'liq_M4' | 'liq_M3_path' | 'liq_M4_path' :
+        case 'M3' | 'M0' | 'Mx' | 'My' | 'Mx_path' | 'My_path' :
             output_data = raw_data[var_name[0]] + raw_data[var_name[1]]
-        case 'mean_M3_path' | 'mean_M4_path':
+        case 'mean_Mx_path' | 'mean_My_path':
             output_data = np.nanmean(raw_data[var_name[0]] + raw_data[var_name[1]])
         case 'mean_M0' | 'mean_M3' | 'mean_Mx' | 'mean_My':
             output_data = np.nanmean(raw_data[var_name[0]] + raw_data[var_name[1]])
+        case 'mean_dm':
+            output_data = np.nanmean(((raw_data['cloud_M1'] + raw_data['rain_M1'])/
+                                     (raw_data['cloud_M2'] + raw_data['rain_M2']))**(1./3.))
 
     # }}}
 

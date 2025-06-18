@@ -9,49 +9,6 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.losses import Loss
 import numpy as np
 
-def build_regressor_model(hp, npar, nobs):
-    model = keras.Sequential()
-    # Tune the number of layers.
-
-    hp_activation = hp.Choice('activation', values=['relu', 'tanh', 'leaky_relu'])
-
-    for i in range(hp.Int('num_layers', 1, 4)):
-        # Tune the number of units for each layer.
-        units = hp.Int(f'units_{i}', min_value=32, max_value=256, step=32)
-        if i == 0:
-            model.add(layers.Input(shape=(npar,)))
-        else:
-            model.add(layers.Dense(units, activation=hp_activation))
-        
-        # Optionally, tune dropout.
-        if hp.Boolean(f'dropout_{i}'):
-            dropout_rate = hp.Float(f'dropout_rate_{i}', min_value=0, max_value=0.5, step=0.1)
-            model.add(layers.Dropout(rate=dropout_rate))
-    
-    # Output layer
-    model.add(layers.Dense(nobs))
-    
-    # Choose the optimizer as a hyperparameter
-    optimizer_choice = hp.Choice('optimizer', values=['rmsprop'])
-    # optimizer_choice = hp.Choice('optimizer', values=['adam', 'sgd', 'rmsprop'])
-    
-    if optimizer_choice == 'adam':
-        lr = hp.Float('adam_lr', 1e-5, 1e-2, sampling='LOG')
-        optimizer = keras.optimizers.Adam(learning_rate=lr)
-    elif optimizer_choice == 'sgd':
-        lr = hp.Float('sgd_lr', 1e-5, 1e-2, sampling='LOG')
-        momentum = hp.Float('sgd_momentum', 0.0, 0.9, step=0.1)
-        optimizer = keras.optimizers.SGD(learning_rate=lr, momentum=momentum)
-    else:  # rmsprop
-        lr = hp.Float('rmsprop_lr', 1e-5, 1e-2, sampling='LOG')
-        optimizer = keras.optimizers.RMSprop(learning_rate=lr)
-
-    # Tune learning rate.
-    model.compile(optimizer=optimizer,
-                  loss='mean_squared_error',
-                  metrics=['mean_absolute_error', 'mean_squared_error'])
-    return model
-
 @keras.saving.register_keras_serializable(package="CustomLosses", name="MaskedMSE")
 class MaskedMSE(Loss):
     def __init__(self, threshold=0.0, **kwargs):
@@ -59,6 +16,8 @@ class MaskedMSE(Loss):
         self.threshold = threshold
 
     def call(self, y_true, y_pred):
+        y_true = tf.convert_to_tensor(y_true)
+        y_pred = tf.convert_to_tensor(y_pred)
         mask = K.cast(K.greater(y_true, self.threshold), K.floatx())
         squared_error = K.square(y_true - y_pred)
         masked_error = squared_error * mask
@@ -69,13 +28,7 @@ class MaskedMSE(Loss):
         config.update({"threshold": self.threshold})
         return config
 
-# def base_reg_loss(y_true, y_pred, threshold=-999):
-#     mask = K.cast(K.greater(y_true, threshold), K.floatx())
-#     squared_error = K.square(y_true - y_pred)
-#     masked_error = squared_error * mask
-#     return K.sum(masked_error) / (K.sum(mask) + K.epsilon())
-
-def build_classreg_model(hp, npar, nobs):
+def build_classreg_model_old(hp, npar, nobs):
     inputs = layers.Input(shape=(npar,))
     x = inputs
     
@@ -85,6 +38,10 @@ def build_classreg_model(hp, npar, nobs):
         # Tune number of units for each layer
         units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
         x = layers.Dense(units, activation='relu')(x)
+        # Optionally add dropout
+        if hp.Boolean(f"dropout_{i}"):
+            dropout_rate = hp.Float(f"dropout_rate_{i}", min_value=0.0, max_value=0.5, step=0.1)
+            x = layers.Dropout(rate=dropout_rate)(x)
     
     # Classifier branch: predicts water presence (binary for each of the 7202 outputs)
     presence_output = layers.Dense(nobs, activation='sigmoid', name='presence')(x)
@@ -103,7 +60,41 @@ def build_classreg_model(hp, npar, nobs):
     
     return model
 
-def total_loss(y_true_list, y_pred_list, lambdas, ngrps=2, nvar=8):
+def build_classreg_model(hp, npar, nvar, nobs):
+    inputs = layers.Input(shape=(npar,))
+    x = inputs
+    
+    # Tune the number of shared layers (e.g., between 1 and 5 layers)
+    num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+    for i in range(num_shared_layers):
+        # Tune number of units for each layer
+        units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
+        x = layers.Dense(units, activation='relu')(x)
+
+    presence_outputs = []
+    water_outputs = []
+    metrics = {}
+    for i in range(nvar):
+        # Classifier branch: predicts water presence (binary for each of the 7202 outputs)
+        presence_outputs.append(layers.Dense(nobs[i], activation='sigmoid', name=f"presence_{i}")(x))
+        # Regression branch: predicts water content (continuous for each output)
+        water_outputs.append(layers.Dense(nobs[i], name=f"water_{i}")(x))
+        metrics[f"presence_{i}"] = ['accuracy']
+        metrics[f"water_{i}"] = [masked_mae(threshold=-999)]
+    
+    model = keras.Model(inputs=inputs, outputs={'presence': presence_outputs, 'water': water_outputs})
+    lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
+    optimizer = keras.optimizers.Adam(learning_rate=lr)
+    
+    model.compile(
+        optimizer=optimizer,
+        loss={'presence': 'binary_crossentropy', 'water': MaskedMSE(threshold=-999)},
+        metrics=metrics,
+    )
+    
+    return model
+
+def total_mono_loss(y_true_list, y_pred_list, lambdas, ngrps=2, nvar=8):
     L_data = 0.
     # for y_true, y_pred in zip(y_true_list, y_pred_list):
     #     L_data += tf.MaskedMSE(threshold=-999)(y_true, y_pred)
@@ -129,7 +120,7 @@ def total_loss(y_true_list, y_pred_list, lambdas, ngrps=2, nvar=8):
     # Total loss is the sum (or weighted sum) of everything:
     return L_data + L_monos
 
-def build_multihead_model(hp, npar, nvar, nobs):
+def build_multihead_mono_model(hp, npar, nvar, nobs):
     # npar = inputs
     # nvar = number of variables (e.g., 8)
     # nobs = number of observation for each variable (e.g., [1, 1, 1, 1, 720, 720, 720, 720])
@@ -161,12 +152,59 @@ def build_multihead_model(hp, npar, nvar, nobs):
 
     model.compile(
         optimizer=optimizer,
-        loss=lambda y_true, y_pred: total_loss(y_true, y_pred, lmono, ngrps),
+        loss=lambda y_true, y_pred: total_mono_loss(y_true, y_pred, lmono, ngrps),
         metrics=["mae"] * nvar
     )
 
     return model
 
+def build_multihead_model(hp, npar, nvar, nobs):
+    # npar = inputs
+    # nvar = number of variables (e.g., 8)
+    # nobs = number of observation for each variable (e.g., [1, 1, 1, 1, 720, 720, 720, 720])
+    
+    inputs = layers.Input(shape=(npar,))
+    x = inputs
+
+    # Tune the number of shared layers (e.g., between 1 and 5 layers)
+    num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+    for i in range(num_shared_layers):
+        # Tune number of units for each layer
+        units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
+        x = layers.Dense(units, activation='relu')(x)
+    
+    outputs = []
+    
+    for i in range(nvar):
+        p_i = layers.Dense(nobs[i], activation="sigmoid", name=f"presence_{i}")(x)
+        r_i = layers.Dense(nobs[i], activation="linear", name=f"raw_{i}")(x)
+        combined_i = layers.Multiply(name=f"water_{i}")([p_i, r_i])
+        outputs.append(combined_i)
+
+    model = keras.Model(inputs=inputs, outputs=outputs)
+    lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
+    optimizer = keras.optimizers.Adam(learning_rate=lr)
+
+    model.compile(
+        optimizer=optimizer,
+        loss=MaskedMSE(threshold=-999),
+        metrics=[masked_mae(threshold=-999)] * nvar
+    )
+
+    return model
+
+def masked_mae(threshold=-999):
+    """
+    Returns a MAE metric that ignores (i.e. weights=0) any y_true <= threshold.
+    """
+    def _masked_mae(y_true, y_pred):
+        # y_true, y_pred: arbitrary shape
+        mask = tf.cast(tf.greater(y_true, threshold), tf.float32)
+        abs_err = tf.abs(y_true - y_pred) * mask
+        # sum over all elements, then divide by total valid count
+        return tf.reduce_sum(abs_err) / (tf.reduce_sum(mask) + tf.keras.backend.epsilon())
+    return _masked_mae
+    
 class CombinedEarlyStopping(tf.keras.callbacks.Callback):
     def __init__(self, loss_patience=10, acc_patience=10):
         super().__init__()
