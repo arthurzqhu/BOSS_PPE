@@ -106,7 +106,8 @@ indvar_name_set = ['diagM3_cloud','diagM3_rain',
                    'V_M0', 'V_M3', 'V_Mx', 'V_My',
                    'V_M0', 'V_M3', 'V_Mx', 'V_My',
                    'dn_liq_coll', 'dmx_liq_coll', 'dmy_liq_coll',
-                   ['cloud_M2', 'rain_M2', 'cloud_M1', 'rain_M1']
+                   ['cloud_M2', 'rain_M2', 'cloud_M1', 'rain_M1'],
+                   'dm4_sed',
                    ]
 
 indvar_ename_set = ['CWC','RWC', #1
@@ -117,7 +118,7 @@ indvar_ename_set = ['CWC','RWC', #1
                     'GS delta (r)','GS skewness (r)', #14
                     'cloud half-life', #15
                     'D_{m,c}','D_{m,r}','D_{m,w}', #18
-                    'dm cloud by coll','dm_{r,coll}','dm by sed', #21
+                    'dm cloud by coll','dm_{r,coll}','dm3_sed', #21
                     'dm cloud by CE','dm rain by CE', 'dm liq by CE', #24
                     'dn cloud by CE','dn rain by CE', 'dn liq by CE', #27
                     'dqv adv','Mc adv','Mr adv', #30
@@ -138,14 +139,14 @@ indvar_ename_set = ['CWC','RWC', #1
                     'Mr force', 'Nr force', 'rain M3 force', 'rain M4 force',  #78
                     'nu_c', 'nu_r',  #80
                     'Nd', 'LWC', 'vertical velocity', 'vapour', #84
-                    'theta','LNP', 'dn liq by coll', #87
-                    'dmx liq by coll', 'dmy liq by coll', #89
-                    'dn liq by nuc', 'dn liq by evap', #91
+                    'theta','LNP', 'dm0_coal', #87
+                    'dmx_coal', 'dmy_coal', #89
+                    'dm0_nuc', 'dm0_evap', #91
                     'peak rain rate', 'peak RR time', 'LWP half-life', 'mean_LWP', #95
-                    'mean D_w', 'dn by sed', 'dmx by sed', 'dmy by sed', #99
+                    'mean D_w', 'dm0_sed', 'dm6_sed', 'dm9_sed', #99
                     'boss dm sed','boss dn sed','boss dmx sed','boss dmy sed', #103
-                    'M6 liq','M9 liq', 'mean RWP', 'mean_LNP', #107
-                    'mean rain rate', 'mean CWP', 'DSDm', 'DSDn', #111
+                    'M6 liq','M9 liq', 'mean_RWP', 'mean_LNP', #107
+                    'mean_rain_rate', 'mean_CWP', 'DSDm', 'DSDn', #111
                     'temperature', 'pressure', 'reff', #114
                     'M3', 'M0', #116
                     'Mx', 'My', #118
@@ -156,7 +157,7 @@ indvar_ename_set = ['CWC','RWC', #1
                     'mean_V_M0', 'mean_V_M3', 'mean_V_Mx', 'mean_V_My', #134
                     'V_M0', 'V_M3', 'V_Mx', 'V_My', #138
                     'mean_dm0_coal', 'mean_dmx_coal', 'mean_dmy_coal', #141
-                    'mean_dm', #142
+                    'mean_dm', 'dm4_sed', #143
                     ]
 
 indvar_units_set = [' [kg/kg]',' [kg/kg]',
@@ -192,8 +193,8 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
                     ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
                     ' [1/kg/s]', ' [1/kg/s]', 
                     ' [mm/hr]', ' [s]', ' [s]', ' [kg/$m^2$]', 
-                    r' [\mum]', ' [#/kg/s]', ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
-                    ' [kg/kg/s]', ' [#/kg/s]', ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
+                    r' [\mum]', ' [#/kg/s]', ' [$m^6$/$m^2$/s]', ' [$m^9$/$m^2$/s]', 
+                    ' [kg/kg/s]', ' [#/kg/s]', ' [$m^6$/$m^2$/s]', ' [$m^9$/$m^2$/s]', 
                     ' [$m^6$/kg]', ' [$m^9$/kg]', ' [kg/$m^2$]', ' [1/$m^2$]', 
                     ' [mm/hr]', ' [kg/$m^2$]', ' [kg/kg/ln(r)]', ' [1/kg/ln(r)]',
                     ' [K]', ' [mb]', r' [\mum]',
@@ -207,7 +208,7 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
                     ' [m/s]', ' [m/s]', ' [m/s]', ' [m/s]', 
                     ' [m/s]', ' [m/s]', ' [m/s]', ' [m/s]', 
                     ' [1/kg/s]', ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
-                    ' [m]',
+                    ' [m]', ' [$m^4$/$m^2$/s]'
                     ]
 
 # }}}
@@ -215,6 +216,10 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
 
 def filter_DS_Store(file_list):
     return list(filter(lambda x: x != '.DS_Store', file_list))
+
+def funnel_momxy(file_list, momxy):
+    momxy_str = momxy + '_ens'
+    return list(filter(lambda x: momxy_str in x, file_list))
 
 def get_dics(output_dir, nikki, mconfig, n_init): 
     # get discrete initial conditions from BIN
@@ -226,13 +231,15 @@ def get_dics(output_dir, nikki, mconfig, n_init):
         mconfig_dir += var_strs[0]
     return vars_strs
 
-def get_mps(output_dir, nikki, mconfig, l_cic, vars_strs):
+def get_mps(output_dir, nikki, mconfig, l_cic, vars_strs, momxy):
     # get microphysics scheme name
     if l_cic:
         mps = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig))
+        mps = funnel_momxy(mps, momxy)
     else:
         vars_dir = "/".join([istr[0] for istr in vars_strs])
         mps = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig + '/' + vars_dir))
+        mps = funnel_momxy(mps, momxy)
     nmp = len(mps)
     return mps, nmp
 
@@ -429,18 +436,39 @@ def load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic,
 
     # get initial conditions
     for vn in vars_vn:
+        nc_dict[vn + '_units'] = dataset.getncattr(vn + '_units')
         nc_dict[ic_str][mp][vn] = dataset.getncattr(vn)
-        
-    for ivar in var_interest:
-        var_name = indvar_name_set[ivar]
-        var_ename = indvar_ename_set[ivar]
-        raw_data = {}
-        if type(var_name) == list:
-            for var_name_component in var_name:
-                raw_data[var_name_component] = dataset.variables[var_name_component][:]
-        else:
-            raw_data[var_name] = dataset.variables[var_name][:]
+    
+    mphys_scheme = dataset.getncattr('Microphysics ID')
 
-        nc_dict[ic_str][mp][var_ename], lin_or_log[var_ename], data_range[ic_str][var_ename] = \
-                    var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0)
+    if mphys_scheme == 'boss':
+        nc_dict['n_param_nevp'] = dataset.getncattr('boss_n_param_nevp')
+        nc_dict['n_param_condevp'] = dataset.getncattr('boss_n_param_condevp')
+        nc_dict['n_param_coal'] = dataset.getncattr('boss_n_param_coal')
+        nc_dict['n_param_sed'] = dataset.getncattr('boss_n_param_sed')
+
+        is_ppe = bool(dataset.getncattr('boss_is_ppe'))
+        if is_ppe:
+            nc_dict['is_perturbed_nevp'] = dataset.getncattr('boss_param_perturbed_nevp')
+            nc_dict['is_perturbed_condevp'] = dataset.getncattr('boss_param_perturbed_condevp')
+            nc_dict['is_perturbed_coal'] = dataset.getncattr('boss_param_perturbed_coal')
+            nc_dict['is_perturbed_sed'] = dataset.getncattr('boss_param_perturbed_sed')
+
+    if isinstance(var_interest, list):
+        for ivar in var_interest:
+            var_name = indvar_name_set[ivar]
+            var_ename = indvar_ename_set[ivar]
+            raw_data = {}
+            if type(var_name) == list:
+                for var_name_component in var_name:
+                    raw_data[var_name_component] = dataset.variables[var_name_component][:]
+            else:
+                raw_data[var_name] = dataset.variables[var_name][:]
+            nc_dict[ic_str][mp][var_ename], lin_or_log[var_ename], data_range[ic_str][var_ename] = \
+                        var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0)
+    elif var_interest == "all":
+        var_names = list(dataset.variables.keys())
+        for var_name in var_names:
+            nc_dict[ic_str][mp][var_name] = dataset.variables[var_name][:]
+
     return nc_dict, lin_or_log, data_range

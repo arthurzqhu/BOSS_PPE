@@ -28,39 +28,227 @@ class MaskedMSE(Loss):
         config.update({"threshold": self.threshold})
         return config
 
-def build_classreg_model_old(hp, npar, nobs):
+
+def build_crps_network(
+        nvar,
+        npar,
+        nobs,
+        l_has_presence=False,
+        neurons=100,
+        output_activation='linear',
+        model_name="crps_model",
+        learn_rate=0.001,
+        compile_model=True,
+        clear_session=True):
+    ###
+    # Build a simple neural network that creates an ensemble of 
+    # predictions using the CRPS loss.
+    ###
+    # Inputs:
+    # input_shape (int): number of features for training
+    # n_members (int): number of ensemble members to estimate target.
+    # neurons (int): number of nodes in each hidden layer
+    # model_name (str): name of model
+    # learn_rate (float): learning rate of model
+    # compile_model (bool): compile model before returning?
+    # clear_session (bool): clear the tensorflow session?
+    #
+    # Outputs:
+    # tensorflow.keras.Model
+    #
+    if clear_session:
+        tf.keras.backend.clear_session()
+
+    # create features
+    inputs = layers.Input(shape=(npar,), name="Input")
+
+    # create three hidden layers
+    x = layers.Dense(neurons, activation=tf.nn.leaky_relu, name="L1")(inputs)
+    x = layers.Dense(neurons, activation=tf.nn.leaky_relu, name="L2")(x)
+    x = layers.Dense(neurons, activation=tf.nn.leaky_relu, name="L3")(x)
+
+    outputs = {}
+
+    # create ensembles
+    loss_dict = {}
+    for i in range(nvar):
+        outputs[f'water_{i}'] = layers.Dense(nobs[i], activation=output_activation, name=f'water_{i}')(x)
+        loss_dict[f'water_{i}'] = loss_crps_sample_score
+        if l_has_presence:
+            outputs[f'presence_{i}'] = layers.Dense(nobs[i], activation='sigmoid', name=f'presence_{i}')(x)
+    
+    # create model
+    model = keras.Model(inputs=inputs, outputs=outputs, name=model_name)
+    
+    # Compile model, if desired
+    if compile_model:
+        opt = keras.optimizers.Adam(learning_rate=learn_rate)
+        model.compile(loss=loss_dict, optimizer=opt)
+    return model
+
+def loss_crps_sample_score(y_true, y_pred):
+    """Calculates the Continuous Ranked Probability Score (CRPS)
+    for finite ensemble members and a single target.
+    
+    This implementation is based on the identity:
+        CRPS(F, x) = E_F|y_pred - y_true| - 1/2 * E_F|y_pred - y_pred'|
+    where y_pred and y_pred' denote independent random variables drawn from
+    the predicted distribution F, and E_F denotes the expectation
+    value under F.
+
+    Following the approach by Steven Brey at 
+    TheClimateCorporation (formerly ClimateLLC)
+    https://github.com/TheClimateCorporation/properscoring
+    
+    Adapted from David Blei's lab at Columbia University
+    http://www.cs.columbia.edu/~blei/ and
+    https://github.com/blei-lab/edward/pull/922/files
+
+    
+    References
+    ---------
+    Tilmann Gneiting and Adrian E. Raftery (2005).
+        Strictly proper scoring rules, prediction, and estimation.
+        University of Washington Department of Statistics Technical
+        Report no. 463R.
+        https://www.stat.washington.edu/research/reports/2004/tr463R.pdf
+    
+    H. Hersbach (2000).
+        Decomposition of the Continuous Ranked Probability Score
+        for Ensemble Prediction Systems.
+        https://doi.org/10.1175/1520-0434(2000)015%3C0559:DOTCRP%3E2.0.CO;2
+    """
+
+    # Variable names below reference equation terms in docstring above
+    term_one = tf.reduce_mean(tf.abs(
+        tf.subtract(y_pred, y_true)), axis=-1)
+    term_two = tf.reduce_mean(
+        tf.abs(
+            tf.subtract(tf.expand_dims(y_pred, -1),
+                        tf.expand_dims(y_pred, -2))),
+        axis=(-2, -1))
+    half = tf.constant(-0.5, dtype=term_two.dtype)
+    score = tf.add(term_one, tf.multiply(half, term_two))
+    score = tf.reduce_mean(score)
+    return score
+
+def gaussian_nll(y_true, y_pred):
+    """
+    Custom negative log-likelihood loss for Gaussian outputs, masking y_true <= -999.
+    y_pred: concatenated [mean, logvar] for each output
+    """
+    n = tf.shape(y_pred)[-1] // 2
+    mean = y_pred[..., :n]
+    logvar = y_pred[..., n:]
+    # Mask: only include y_true > -999
+    mask = tf.cast(tf.greater(y_true, -999.0), tf.float32)
+    # clip logvar to avoid too small/large values and ensure minimum variance
+    logvar = tf.clip_by_value(logvar, -4.0, 10.0)  # exp(-4) ≈ 0.018, exp(10) ≈ 22026
+    nll = logvar + tf.square(y_true - mean) / (tf.exp(logvar) + 1e-6)
+    masked_nll = nll * mask
+    return 0.5 * tf.reduce_sum(masked_nll) / (tf.reduce_sum(mask) + tf.keras.backend.epsilon())
+
+
+def build_classreg_unc_model(hp, npar, nvar, nobs):
+    """
+    Model outputs:
+      - presence_{i}: sigmoid, for each variable
+      - water_{i}: concatenated [mean, logvar] for each variable
+    Loss:
+      - presence: binary_crossentropy
+      - water: gaussian_nll (negative log-likelihood)
+    """
+    inputs = layers.Input(shape=(npar,))
+    x = inputs
+
+    num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+    for i in range(num_shared_layers):
+        units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
+        x = layers.Dense(units, activation='relu')(x)
+
+    outputs = {}
+    metrics = {}
+    loss_dict = {}
+
+    for i in range(nvar):
+        # Presence output
+        outputs[f'presence_{i}'] = layers.Dense(nobs[i], activation='sigmoid', name=f'presence_{i}')(x)
+        metrics[f'presence_{i}'] = ['accuracy']
+        loss_dict[f'presence_{i}'] = 'binary_crossentropy'
+
+        # Water mean and logvar concatenated output
+        water_mean = layers.Dense(nobs[i], name=f'water_mean_{i}')(x)
+        water_logvar = layers.Dense(nobs[i], 
+                                   kernel_initializer='glorot_normal',
+                                   bias_initializer=tf.keras.initializers.Constant(0.0),  # Start with log(1) = 0
+                                   name=f'water_logvar_{i}')(x)
+        # Add a minimum uncertainty floor for MCMC
+        water_logvar = tf.maximum(water_logvar, tf.constant(-1.0))  # Minimum std of exp(-1) ≈ 0.37
+        water_out = layers.Concatenate(name=f'water_{i}')([water_mean, water_logvar])
+        outputs[f'water_{i}'] = water_out
+        loss_dict[f'water_{i}'] = gaussian_nll
+        
+        def mae_on_mean(y_true, y_pred):
+            n = tf.shape(y_pred)[-1] // 2
+            mean = y_pred[..., :n]
+            mask = tf.cast(tf.greater(y_true, -999.0), tf.float32)
+            abs_err = tf.abs(y_true - mean) * mask
+            return tf.reduce_sum(abs_err) / (tf.reduce_sum(mask) + tf.keras.backend.epsilon())
+        metrics[f'water_{i}'] = [mae_on_mean]
+
+    model = keras.Model(inputs=inputs, outputs=outputs)
+    lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
+    optimizer = keras.optimizers.Adam(learning_rate=lr)
+
+    model.compile(
+        optimizer=optimizer,
+        loss=loss_dict,
+        metrics=metrics,
+    )
+
+    return model
+
+def build_classreg_model(hp, npar, nvar, nobs, l_dropout=False):
     inputs = layers.Input(shape=(npar,))
     x = inputs
     
     # Tune the number of shared layers (e.g., between 1 and 5 layers)
     num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+    if l_dropout:
+        dropout_rate = hp.Float("dropout_rate", min_value=0.1, max_value=0.5, step=0.1)
     for i in range(num_shared_layers):
         # Tune number of units for each layer
         units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
-        x = layers.Dense(units, activation='relu')(x)
-        # Optionally add dropout
-        if hp.Boolean(f"dropout_{i}"):
-            dropout_rate = hp.Float(f"dropout_rate_{i}", min_value=0.0, max_value=0.5, step=0.1)
-            x = layers.Dropout(rate=dropout_rate)(x)
+        x = layers.Dense(units, activation='swish')(x)
+        if l_dropout:
+            x = layers.Dropout(dropout_rate)(x, training=True)  # Keep dropout active during inference
+
+    outputs = {}
+    loss_dict = {}
+    metrics = {}
+    for i in range(nvar):
+        # Classifier branch: predicts water presence (binary for each of the 7202 outputs)
+        outputs[f'presence_{i}'] = layers.Dense(nobs[i], activation='sigmoid', name=f'presence_{i}')(x)
+        metrics[f'presence_{i}'] = ['accuracy']
+        loss_dict[f'presence_{i}'] = 'binary_crossentropy'
+        # Regression branch: predicts water content (continuous for each output)
+        outputs[f'water_{i}'] = layers.Dense(nobs[i], name=f"water_{i}")(x)
+        loss_dict[f'water_{i}'] = MaskedMSE(threshold=-999)
+        metrics[f'water_{i}'] = [masked_mae(threshold=-999)]
     
-    # Classifier branch: predicts water presence (binary for each of the 7202 outputs)
-    presence_output = layers.Dense(nobs, activation='sigmoid', name='presence')(x)
-    # Regression branch: predicts water content (continuous for each output)
-    water_output = layers.Dense(nobs, name='water')(x)
-    
-    model = keras.Model(inputs=inputs, outputs=[presence_output, water_output])
-    lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
+    model = keras.Model(inputs=inputs, outputs=outputs)
+    lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
     optimizer = keras.optimizers.Adam(learning_rate=lr)
     
     model.compile(
         optimizer=optimizer,
-        loss={'presence': 'binary_crossentropy', 'water': MaskedMSE(threshold=-999)},
-        metrics={'presence': 'accuracy', 'water': 'mae'}
+        loss=loss_dict,
+        metrics=metrics,
     )
     
     return model
 
-def build_classreg_model(hp, npar, nvar, nobs):
+def build_classreg_fallspeed_model(hp, npar, nvar, nobs):
     inputs = layers.Input(shape=(npar,))
     x = inputs
     
@@ -78,12 +266,12 @@ def build_classreg_model(hp, npar, nvar, nobs):
         # Classifier branch: predicts water presence (binary for each of the 7202 outputs)
         presence_outputs.append(layers.Dense(nobs[i], activation='sigmoid', name=f"presence_{i}")(x))
         # Regression branch: predicts water content (continuous for each output)
-        water_outputs.append(layers.Dense(nobs[i], name=f"water_{i}")(x))
+        water_outputs.append(layers.Dense(nobs[i], activation='sigmoid', name=f"water_{i}")(x))
         metrics[f"presence_{i}"] = ['accuracy']
         metrics[f"water_{i}"] = [masked_mae(threshold=-999)]
     
     model = keras.Model(inputs=inputs, outputs={'presence': presence_outputs, 'water': water_outputs})
-    lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
+    lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
     optimizer = keras.optimizers.Adam(learning_rate=lr)
     
     model.compile(
@@ -144,7 +332,7 @@ def build_multihead_mono_model(hp, npar, nvar, nobs):
         outputs.append(combined_i)
 
     model = keras.Model(inputs=inputs, outputs=outputs)
-    lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
+    lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
     optimizer = keras.optimizers.Adam(learning_rate=lr)
 
     ngrps = nvar // 4  # Assuming each group has 4 outputs bc it's 4M BOSS, adjust as necessary
@@ -171,7 +359,7 @@ def build_multihead_model(hp, npar, nvar, nobs):
     for i in range(num_shared_layers):
         # Tune number of units for each layer
         units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
-        x = layers.Dense(units, activation='relu')(x)
+        x = layers.Dense(units, activation=tf.nn.leaky_relu, name=f"L{i+1}")(x)
     
     outputs = []
     
@@ -182,7 +370,7 @@ def build_multihead_model(hp, npar, nvar, nobs):
         outputs.append(combined_i)
 
     model = keras.Model(inputs=inputs, outputs=outputs)
-    lr = hp.Float('adam_lr', 1e-6, 1e-1, sampling='LOG')
+    lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
     optimizer = keras.optimizers.Adam(learning_rate=lr)
 
     model.compile(
@@ -281,3 +469,142 @@ class PrintDot(keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs):
         if epoch % 100 == 0: print('')
         print('.', end='')
+
+def build_mc_dropout_model(hp, npar, nvar, nobs):
+    """
+    Model with Monte Carlo Dropout for epistemic uncertainty estimation.
+    This is more appropriate for MCMC as it captures model uncertainty.
+    """
+    inputs = layers.Input(shape=(npar,))
+    x = inputs
+
+    num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+    dropout_rate = hp.Float("dropout_rate", min_value=0.1, max_value=0.5, step=0.1)
+    
+    for i in range(num_shared_layers):
+        units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
+        x = layers.Dense(units, activation=tf.nn.leaky_relu)(x)
+        x = layers.Dropout(dropout_rate)(x, training=True)  # Keep dropout active during inference
+
+    outputs = {}
+    metrics = {}
+    loss_dict = {}
+
+    for i in range(nvar):
+        # Presence output
+        outputs[f'presence_{i}'] = layers.Dense(nobs[i], activation='sigmoid', name=f'presence_{i}')(x)
+        metrics[f'presence_{i}'] = ['accuracy']
+        loss_dict[f'presence_{i}'] = 'binary_crossentropy'
+
+        # Water output (mean only - uncertainty comes from MC sampling)
+        outputs[f'water_{i}'] = layers.Dense(nobs[i], name=f'water_{i}')(x)
+        loss_dict[f'water_{i}'] = MaskedMSE(threshold=-999)
+        metrics[f'water_{i}'] = [masked_mae(threshold=-999)]
+
+    model = keras.Model(inputs=inputs, outputs=outputs)
+    lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
+    optimizer = keras.optimizers.Adam(learning_rate=lr)
+
+    model.compile(
+        optimizer=optimizer,
+        loss=loss_dict,
+        metrics=metrics,
+    )
+
+    return model
+
+def mc_dropout_predict(model, x, n_samples=100):
+    """
+    Monte Carlo Dropout prediction to estimate epistemic uncertainty.
+    
+    Args:
+        model: Trained model with dropout layers
+        x: Input data
+        n_samples: Number of MC samples
+    
+    Returns:
+        mean_pred: Mean prediction
+        std_pred: Standard deviation (epistemic uncertainty)
+    """
+    predictions = []
+    
+    for _ in range(n_samples):
+        pred = model(x, training=True)  # Keep dropout active
+        predictions.append(pred)
+    
+    # Stack predictions
+    stacked_preds = tf.stack(predictions, axis=0)
+    
+    # Calculate mean and std across samples
+    mean_pred = tf.reduce_mean(stacked_preds, axis=0)
+    std_pred = tf.math.reduce_std(stacked_preds, axis=0)
+    
+    return mean_pred, std_pred
+
+def build_ensemble_model(hp, npar, nvar, nobs, n_models=5):
+    """
+    Build an ensemble of models for uncertainty estimation.
+    Each model in the ensemble provides a different prediction,
+    and the spread gives us epistemic uncertainty.
+    """
+    models = []
+    
+    for i in range(n_models):
+        # Each model gets different random initialization
+        tf.random.set_seed(hp.Int(f"seed_{i}", 0, 10000))
+        
+        inputs = layers.Input(shape=(npar,))
+        x = inputs
+
+        num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+        for j in range(num_shared_layers):
+            units = hp.Int(f"units_{j}", min_value=32, max_value=256, step=32)
+            x = layers.Dense(units, activation='relu')(x)
+
+        outputs = {}
+        for k in range(nvar):
+            outputs[f'water_{k}'] = layers.Dense(nobs[k], name=f'water_{k}_model_{i}')(x)
+            if hp.Boolean("use_presence"):
+                outputs[f'presence_{k}'] = layers.Dense(nobs[k], activation='sigmoid', name=f'presence_{k}_model_{i}')(x)
+
+        model = keras.Model(inputs=inputs, outputs=outputs)
+        lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
+        optimizer = keras.optimizers.Adam(learning_rate=lr)
+        
+        # Use different loss functions for different models to increase diversity
+        if i % 2 == 0:
+            loss = MaskedMSE(threshold=-999)
+        else:
+            loss = 'mse'
+            
+        model.compile(optimizer=optimizer, loss=loss)
+        models.append(model)
+    
+    return models
+
+def ensemble_predict(models, x):
+    """
+    Get predictions from ensemble and compute uncertainty.
+    
+    Args:
+        models: List of trained models
+        x: Input data
+    
+    Returns:
+        mean_pred: Mean prediction across ensemble
+        std_pred: Standard deviation (epistemic uncertainty)
+    """
+    predictions = []
+    
+    for model in models:
+        pred = model(x)
+        predictions.append(pred)
+    
+    # Stack predictions
+    stacked_preds = tf.stack(predictions, axis=0)
+    
+    # Calculate mean and std across ensemble
+    mean_pred = tf.reduce_mean(stacked_preds, axis=0)
+    std_pred = tf.math.reduce_std(stacked_preds, axis=0)
+    
+    return mean_pred, std_pred
