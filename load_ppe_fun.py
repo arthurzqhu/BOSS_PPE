@@ -218,20 +218,25 @@ def filter_DS_Store(file_list):
     return list(filter(lambda x: x != '.DS_Store', file_list))
 
 def funnel_momxy(file_list, momxy):
-    momxy_str = momxy + '_ens'
-    return list(filter(lambda x: momxy_str in x, file_list))
+    if momxy != '':
+        momxy_str = momxy + '_ens'
+        return list(filter(lambda x: momxy_str in x, file_list))
+    else:
+        return file_list
 
 def get_dics(output_dir, nikki, mconfig, n_init): 
     # get discrete initial conditions from BIN
     vars_strs = []
-    mconfig_dir = output_dir + nikki + '/' + mconfig + '/'
+    mconfig_dir = f"{output_dir}{nikki}/{mconfig}/"
     for i_init in range(n_init):
         var_strs = sort_strings_by_number(os.listdir(mconfig_dir))
         vars_strs.append(var_strs)
         mconfig_dir += var_strs[0]
-    return vars_strs
+    
+    vars_vn = [re.search(r'^[A-Z]*[a-z]*', istr[0])[0] for istr in vars_strs]
+    return vars_strs, vars_vn
 
-def get_mps(output_dir, nikki, mconfig, l_cic, vars_strs, momxy):
+def get_mps(output_dir, nikki, mconfig, l_cic, vars_strs, momxy=''):
     # get microphysics scheme name
     if l_cic:
         mps = filter_DS_Store(os.listdir(output_dir + nikki + '/' + mconfig))
@@ -407,20 +412,23 @@ def load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic,
              set_OOB_as_NaN=True, set_NaN_to_0=True):
     lin_or_log = {}
     mp = file_info['mp_config']
+    
 
     # files are put below two extra layers of initial condition directory so need to check
     # before loading
     vars_vn = file_info['vars_vn']
-    
+    fdir = file_info['dir']
+    fdate = file_info['date']
+    fsim_config = file_info['sim_config']
+    fversion_number = file_info['version_number']
+
     if continuous_ic:
-        filedir = file_info['dir'] + file_info['date'] +'/'+ file_info['sim_config'] +'/'+ \
-                mp +'/'+ 'KiD_m-*c-010*_v-' + file_info['version_number'] + '.nc'
+        filedir = f"{fdir}{fdate}/{fsim_config}/{mp}/KiD_m-*c-010*_v-{fversion_number}.nc"
         ic_str = 'cic' # = continuous initial condition
     else:
         ic_str = "".join(file_info['vars_str'])
         vars_dir = "/".join([istr for istr in file_info['vars_str']])
-        filedir = file_info['dir'] + file_info['date'] +'/'+ file_info['sim_config'] +'/'+ \
-                vars_dir +'/'+ mp +'/'+ 'KiD_m-*c-010*_v-' + file_info['version_number'] + '.nc'
+        filedir = f"{fdir}{fdate}/{fsim_config}/{vars_dir}/{mp}/KiD_m-*c-010*_v-{fversion_number}.nc"
         
     try:
         filedir = glob(filedir)[0]
@@ -436,7 +444,11 @@ def load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic,
 
     # get initial conditions
     for vn in vars_vn:
-        nc_dict[vn + '_units'] = dataset.getncattr(vn + '_units')
+        try:
+            nc_dict[vn + '_units'] = dataset.getncattr(vn + '_units')
+        except:
+            pass
+            # print(f'Warning: no units found for {vn}')
         nc_dict[ic_str][mp][vn] = dataset.getncattr(vn)
     
     mphys_scheme = dataset.getncattr('Microphysics ID')
@@ -446,7 +458,7 @@ def load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic,
         nc_dict['n_param_condevp'] = dataset.getncattr('boss_n_param_condevp')
         nc_dict['n_param_coal'] = dataset.getncattr('boss_n_param_coal')
         nc_dict['n_param_sed'] = dataset.getncattr('boss_n_param_sed')
-
+        
         is_ppe = bool(dataset.getncattr('boss_is_ppe'))
         if is_ppe:
             nc_dict['is_perturbed_nevp'] = dataset.getncattr('boss_param_perturbed_nevp')
@@ -471,4 +483,4 @@ def load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic,
         for var_name in var_names:
             nc_dict[ic_str][mp][var_name] = dataset.variables[var_name][:]
 
-    return nc_dict, lin_or_log, data_range
+    return lin_or_log

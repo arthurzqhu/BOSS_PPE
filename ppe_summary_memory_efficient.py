@@ -19,21 +19,21 @@ def main():
     """Main function to process PPE data with memory efficiency"""
     # Configuration
     vnum = '0001'
-    nikki = '2025-07-29'
-    target_nikki = '2025-07-29'
+    nikki = '2025-08-28'
+    target_nikki = 'target'
     momxy = '46'
     
-    ppe_config = 'box_coal_qn_4ma_hill_growth'
-    target_simconfig = 'box_coal_varqn_dt5_test'
+    ppe_config = 'condcoal_r1'
+    target_simconfig = 'condcoal_dt5'
     
     if not os.path.exists(lp.nc_dir):
         os.makedirs(lp.nc_dir)
     l_cic = True
     
     n_init = 2
-    target_name = 'boss_4m' + momxy
+    target_name = 'BIN_TAU' + momxy
     
-    vars_strs = lp.get_dics(lp.output_dir, target_nikki, target_simconfig, n_init)
+    vars_strs, vars_vn = lp.get_dics(lp.output_dir, target_nikki, target_simconfig, n_init)
     mps, _ = lp.get_mps(lp.output_dir, nikki, ppe_config, l_cic, vars_strs, momxy)
     mps = lp.sort_strings_by_number(mps)
     
@@ -58,7 +58,6 @@ def main():
     
     # Process data
     var_interest = snapshot_var_idx + summary_var_idx
-    vars_vn = [re.search(r'^[A-Z]*[a-z]*', istr[0])[0] for istr in vars_strs]
     
     file_info = {
         'dir': lp.output_dir, 
@@ -87,8 +86,8 @@ def main():
     dz = nc_dict['z'][1] - nc_dict['z'][0]
     
     diag_ts = np.array([x for x in nc_dict['time'] if x % diag_dt == 0])
-# diag_zs = np.array([x for x in nc_dict['z'][1:] if x % diag_dz == 0])
-    diag_zs = np.arange(1000, 3001, diag_dz)
+    diag_zs = np.array([x for x in nc_dict['z'][1:] if x % diag_dz == 0])
+    # diag_zs = np.arange(1000, 3001, diag_dz)
     
     ncase = 1
     ncase_respective = [len(i) for i in vars_strs]
@@ -168,7 +167,7 @@ def main():
     print("\nWriting netCDF file...")
 
     # Check if file exists and handle overwrite
-    nc_filename = f"{lp.nc_dir}{ppe_config}_{momxy}_momvals_targetBOSS_N{len(mps)}_dt{diag_dt}_test.nc"
+    nc_filename = f"{lp.nc_dir}{ppe_config}_{momxy}_momvals_N{len(mps)}_dt{diag_dt}.nc"
     if os.path.exists(nc_filename):
         print(f"\nFile '{nc_filename}' already exists.")
         user_choice = input("Do you want to replace it (r) or keep both (k)? [r/k]: ").strip().lower()
@@ -217,8 +216,8 @@ def load_ppe_data(nc_dict, mps, ppe_config, file_info, var_interest):
     
     for mp in tqdm(mps, desc='loading PPEs'):
         file_info['mp_config'] = mp
-        nc_dict = lp.load_KiD(file_info, var_interest, nc_dict, data_range, 
-                                continuous_ic=True, set_OOB_as_NaN=False, set_NaN_to_0=True)[0]
+        _ = lp.load_KiD(file_info, var_interest, nc_dict, data_range, 
+                                continuous_ic=True, set_OOB_as_NaN=False, set_NaN_to_0=True)
     
     return nc_dict
 
@@ -236,7 +235,7 @@ def load_target_data(nc_dict, vars_strs, file_info, var_interest, target_simconf
             'date': target_nikki,
             'mp_config': target_name
         })
-        nc_dict, _, _ = lp.load_KiD(file_info, var_interest, nc_dict, data_range, 
+        _ = lp.load_KiD(file_info, var_interest, nc_dict, data_range, 
                                                         continuous_ic=False, set_OOB_as_NaN=False, set_NaN_to_0=True)
     
     return nc_dict

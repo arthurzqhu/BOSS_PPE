@@ -9,6 +9,10 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.losses import Loss
 import numpy as np
 
+SQRT2   = tf.sqrt(tf.constant(2., tf.float32))
+SQRT_PI = tf.sqrt(tf.constant(np.pi, tf.float32))
+SQRT_2PI = tf.sqrt(tf.constant(2. * np.pi, tf.float32))
+
 @keras.saving.register_keras_serializable(package="CustomLosses", name="MaskedMSE")
 class MaskedMSE(Loss):
     def __init__(self, threshold=0.0, **kwargs):
@@ -28,110 +32,6 @@ class MaskedMSE(Loss):
         config.update({"threshold": self.threshold})
         return config
 
-
-def build_crps_network(
-        nvar,
-        npar,
-        nobs,
-        l_has_presence=False,
-        neurons=100,
-        output_activation='linear',
-        model_name="crps_model",
-        learn_rate=0.001,
-        compile_model=True,
-        clear_session=True):
-    ###
-    # Build a simple neural network that creates an ensemble of 
-    # predictions using the CRPS loss.
-    ###
-    # Inputs:
-    # input_shape (int): number of features for training
-    # n_members (int): number of ensemble members to estimate target.
-    # neurons (int): number of nodes in each hidden layer
-    # model_name (str): name of model
-    # learn_rate (float): learning rate of model
-    # compile_model (bool): compile model before returning?
-    # clear_session (bool): clear the tensorflow session?
-    #
-    # Outputs:
-    # tensorflow.keras.Model
-    #
-    if clear_session:
-        tf.keras.backend.clear_session()
-
-    # create features
-    inputs = layers.Input(shape=(npar,), name="Input")
-
-    # create three hidden layers
-    x = layers.Dense(neurons, activation=tf.nn.leaky_relu, name="L1")(inputs)
-    x = layers.Dense(neurons, activation=tf.nn.leaky_relu, name="L2")(x)
-    x = layers.Dense(neurons, activation=tf.nn.leaky_relu, name="L3")(x)
-
-    outputs = {}
-
-    # create ensembles
-    loss_dict = {}
-    for i in range(nvar):
-        outputs[f'water_{i}'] = layers.Dense(nobs[i], activation=output_activation, name=f'water_{i}')(x)
-        loss_dict[f'water_{i}'] = loss_crps_sample_score
-        if l_has_presence:
-            outputs[f'presence_{i}'] = layers.Dense(nobs[i], activation='sigmoid', name=f'presence_{i}')(x)
-    
-    # create model
-    model = keras.Model(inputs=inputs, outputs=outputs, name=model_name)
-    
-    # Compile model, if desired
-    if compile_model:
-        opt = keras.optimizers.Adam(learning_rate=learn_rate)
-        model.compile(loss=loss_dict, optimizer=opt)
-    return model
-
-def loss_crps_sample_score(y_true, y_pred):
-    """Calculates the Continuous Ranked Probability Score (CRPS)
-    for finite ensemble members and a single target.
-    
-    This implementation is based on the identity:
-        CRPS(F, x) = E_F|y_pred - y_true| - 1/2 * E_F|y_pred - y_pred'|
-    where y_pred and y_pred' denote independent random variables drawn from
-    the predicted distribution F, and E_F denotes the expectation
-    value under F.
-
-    Following the approach by Steven Brey at 
-    TheClimateCorporation (formerly ClimateLLC)
-    https://github.com/TheClimateCorporation/properscoring
-    
-    Adapted from David Blei's lab at Columbia University
-    http://www.cs.columbia.edu/~blei/ and
-    https://github.com/blei-lab/edward/pull/922/files
-
-    
-    References
-    ---------
-    Tilmann Gneiting and Adrian E. Raftery (2005).
-        Strictly proper scoring rules, prediction, and estimation.
-        University of Washington Department of Statistics Technical
-        Report no. 463R.
-        https://www.stat.washington.edu/research/reports/2004/tr463R.pdf
-    
-    H. Hersbach (2000).
-        Decomposition of the Continuous Ranked Probability Score
-        for Ensemble Prediction Systems.
-        https://doi.org/10.1175/1520-0434(2000)015%3C0559:DOTCRP%3E2.0.CO;2
-    """
-
-    # Variable names below reference equation terms in docstring above
-    term_one = tf.reduce_mean(tf.abs(
-        tf.subtract(y_pred, y_true)), axis=-1)
-    term_two = tf.reduce_mean(
-        tf.abs(
-            tf.subtract(tf.expand_dims(y_pred, -1),
-                        tf.expand_dims(y_pred, -2))),
-        axis=(-2, -1))
-    half = tf.constant(-0.5, dtype=term_two.dtype)
-    score = tf.add(term_one, tf.multiply(half, term_two))
-    score = tf.reduce_mean(score)
-    return score
-
 def gaussian_nll(y_true, y_pred):
     """
     Custom negative log-likelihood loss for Gaussian outputs, masking y_true <= -999.
@@ -148,64 +48,187 @@ def gaussian_nll(y_true, y_pred):
     masked_nll = nll * mask
     return 0.5 * tf.reduce_sum(masked_nll) / (tf.reduce_sum(mask) + tf.keras.backend.epsilon())
 
-
-def build_classreg_unc_model(hp, npar, nvar, nobs):
+def gaussian_nll_loss_factory(n_obs, mask_min=-999.0, min_sigma=1e-6):
     """
-    Model outputs:
-      - presence_{i}: sigmoid, for each variable
-      - water_{i}: concatenated [mean, logvar] for each variable
-    Loss:
-      - presence: binary_crossentropy
-      - water: gaussian_nll (negative log-likelihood)
+    Expects:
+      y_true: [B, n_obs]
+      y_pred: [B, 2*n_obs]  (first n_obs = mu, last n_obs = raw scale)
+    Returns mean NLL over unmasked entries per batch.
+    """
+    LOG_SQRT_2PI = 0.5 * tf.math.log(tf.constant(2.0 * np.pi, tf.float32))
+
+    def loss(y_true, y_pred):
+        # be robust to mixed precision
+        y_true = tf.cast(y_true, tf.float32)
+        y_pred = tf.cast(y_pred, tf.float32)
+
+        mu    = y_pred[:, :n_obs]
+        raw_s = y_pred[:, n_obs:]
+        sigma = tf.nn.softplus(raw_s) + tf.constant(min_sigma, tf.float32)
+
+        # mask invalid targets
+        mask   = tf.greater(y_true, tf.constant(mask_min, y_true.dtype))
+        mask_f = tf.cast(mask, tf.float32)
+
+        # NLL for N(mu, sigma): 0.5*((y-mu)/sigma)^2 + log(sigma) + 0.5*log(2π)
+        z    = (y_true - mu) / sigma
+        nll  = 0.5 * tf.square(z) + tf.math.log(sigma) + LOG_SQRT_2PI
+
+        # average over observed entries, then over batch
+        num = tf.reduce_sum(nll * mask_f, axis=1)                   # [B]
+        den = tf.reduce_sum(mask_f, axis=1) + 1e-9                  # [B]
+        return tf.reduce_mean(num / den)                            # scalar
+    return loss
+
+# A simple interpretable metric: masked MAE on μ (like your MSE era)
+def masked_mae_from_mu_factory(n_obs, mask_min=-999.0):
+    def metric(y_true, y_pred):
+        y_true = tf.cast(y_true, tf.float32)
+        mu     = tf.cast(y_pred[:, :n_obs], tf.float32)
+        mask_f = tf.cast(tf.greater(y_true, tf.constant(mask_min, y_true.dtype)), tf.float32)
+        num = tf.reduce_sum(tf.abs(mu - y_true) * mask_f, axis=1)
+        den = tf.reduce_sum(mask_f, axis=1) + 1e-9
+        return tf.reduce_mean(num / den)
+    metric.__name__ = "masked_mae_mu"
+    return metric
+
+# -------------------------
+# Builder: like your original, but with NLL heads
+# -------------------------
+def build_classreg_unc_model(hp, npar, nvar, nobs, l_dropout=False):
+    """
+    Presence heads: sigmoid + BCE (unchanged).
+    Water heads: Dense(2*nobs[i]) -> [mu, raw_sigma]; loss = masked Gaussian NLL.
     """
     inputs = layers.Input(shape=(npar,))
     x = inputs
 
+    # Shared trunk (same pattern as your original)
     num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+    if l_dropout:
+        dropout_rate = hp.Float("dropout_rate", min_value=0.1, max_value=0.5, step=0.1)
+    for i in range(num_shared_layers):
+        units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
+        x = layers.Dense(units, activation='swish')(x)
+        if l_dropout:
+            # Keep dropout active at inference if you want MC-dropout samples
+            x = layers.Dropout(dropout_rate)(x, training=True)
+
+    outputs, loss_dict, metrics = {}, {}, {}
+
+    for i in range(nvar):
+        # Presence (classification) — unchanged
+        pres_name = f'presence_{i}'
+        outputs[pres_name] = layers.Dense(nobs[i], activation='sigmoid', name=pres_name)(x)
+        loss_dict[pres_name] = 'binary_crossentropy'
+        metrics[pres_name]   = ['accuracy']
+
+        # Water (uncertainty-aware regression): [mu, raw_sigma]
+        water_name = f'water_{i}'
+        outputs[water_name] = layers.Dense(2 * nobs[i], name=water_name)(x)
+
+        loss_dict[water_name] = gaussian_nll_loss_factory(nobs[i], mask_min=-999.0, min_sigma=1e-6)
+        metrics[water_name]   = [masked_mae_from_mu_factory(nobs[i], mask_min=-999.0)]
+
+    model = keras.Model(inputs=inputs, outputs=outputs)
+
+    lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
+    optimizer = keras.optimizers.Adam(learning_rate=lr)
+
+    model.compile(optimizer=optimizer, loss=loss_dict, metrics=metrics)
+    return model
+
+def gaussian_crps_loss_factory(n_obs, mask_min=-999.0, min_sigma=1e-6):
+    """
+    Returns a loss(y_true, y_pred) that:
+      - expects y_true: [B, n_obs]
+      - expects y_pred: [B, 2*n_obs]  -> first n_obs are μ, last n_obs are raw scales
+      - applies mask where y_true <= mask_min
+      - computes mean CRPS over unmasked entries and over batch
+    """
+    inv_sqrt_pi = 1.0 / SQRT_PI
+
+    def loss(y_true, y_pred):
+        # Split μ and raw scale, then map raw -> σ > 0
+        mu   = y_pred[:, :n_obs]
+        rsca = y_pred[:, n_obs:]
+        sigma = tf.nn.softplus(rsca) + tf.constant(min_sigma, tf.float32)
+
+        # Mask invalid/missing targets (your convention)
+        mask = tf.greater(y_true, tf.constant(mask_min, y_true.dtype))
+        # If everything is masked for a batch item, avoid NaNs by giving zero weight
+        mask_f = tf.cast(mask, tf.float32)
+
+        # z = (y - μ)/σ
+        z   = (y_true - mu) / sigma
+        # φ(z), Φ(z)
+        phi = tf.exp(-0.5 * tf.square(z)) / SQRT_2PI
+        Phi = 0.5 * (1.0 + tf.math.erf(z / SQRT2))
+
+        # CRPS for N(μ, σ): σ [ z(2Φ-1) + 2φ - 1/√π ]
+        crps = sigma * ( z * (2.0 * Phi - 1.0) + 2.0 * phi - inv_sqrt_pi )
+
+        # Apply mask and average over observed entries then over batch
+        crps_sum   = tf.reduce_sum(crps * mask_f, axis=1)  # [B]
+        count_obs  = tf.reduce_sum(mask_f, axis=1) + 1e-9  # [B] avoid div-by-zero
+        crps_mean_per_item = crps_sum / count_obs          # [B]
+        return tf.reduce_mean(crps_mean_per_item)          # scalar
+
+    return loss
+
+# Metric to keep your masked MAE behavior but computed on μ
+def masked_mae_from_mu_factory(n_obs, mask_min=-999.0):
+    def metric(y_true, y_pred):
+        mu = y_pred[:, :n_obs]
+        mask = tf.greater(y_true, tf.constant(mask_min, y_true.dtype))
+        mask_f = tf.cast(mask, tf.float32)
+        abs_err = tf.abs(mu - y_true) * mask_f
+        sum_err = tf.reduce_sum(abs_err, axis=1)
+        count   = tf.reduce_sum(mask_f, axis=1) + 1e-9
+        return tf.reduce_mean(sum_err / count)
+    metric.__name__ = "masked_mae_mu"
+    return metric
+
+def build_classreg_crps_model(hp, npar, nvar, nobs, l_dropout=False):
+    inputs = layers.Input(shape=(npar,))
+    x = inputs
+
+    # Shared trunk
+    num_shared_layers = hp.Int("num_shared_layers", min_value=1, max_value=5, step=1)
+    if l_dropout:
+        dropout_rate = hp.Float("dropout_rate", min_value=0.1, max_value=0.5, step=0.1)
     for i in range(num_shared_layers):
         units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
         x = layers.Dense(units, activation='relu')(x)
+        if l_dropout:
+            x = layers.Dropout(dropout_rate)(x, training=True)  # MC dropout at inference
 
     outputs = {}
-    metrics = {}
     loss_dict = {}
+    metrics = {}
 
     for i in range(nvar):
-        # Presence output
-        outputs[f'presence_{i}'] = layers.Dense(nobs[i], activation='sigmoid', name=f'presence_{i}')(x)
-        metrics[f'presence_{i}'] = ['accuracy']
-        loss_dict[f'presence_{i}'] = 'binary_crossentropy'
+        # --- Presence (classification) branch: unchanged ---
+        pres_name = f'presence_{i}'
+        outputs[pres_name] = layers.Dense(nobs[i], activation='sigmoid', name=pres_name)(x)
+        loss_dict[pres_name] = 'binary_crossentropy'
+        metrics[pres_name]   = ['accuracy']
 
-        # Water mean and logvar concatenated output
-        water_mean = layers.Dense(nobs[i], name=f'water_mean_{i}')(x)
-        water_logvar = layers.Dense(nobs[i], 
-                                   kernel_initializer='glorot_normal',
-                                   bias_initializer=tf.keras.initializers.Constant(0.0),  # Start with log(1) = 0
-                                   name=f'water_logvar_{i}')(x)
-        # Add a minimum uncertainty floor for MCMC
-        water_logvar = tf.maximum(water_logvar, tf.constant(-1.0))  # Minimum std of exp(-1) ≈ 0.37
-        water_out = layers.Concatenate(name=f'water_{i}')([water_mean, water_logvar])
-        outputs[f'water_{i}'] = water_out
-        loss_dict[f'water_{i}'] = gaussian_nll
-        
-        def mae_on_mean(y_true, y_pred):
-            n = tf.shape(y_pred)[-1] // 2
-            mean = y_pred[..., :n]
-            mask = tf.cast(tf.greater(y_true, -999.0), tf.float32)
-            abs_err = tf.abs(y_true - mean) * mask
-            return tf.reduce_sum(abs_err) / (tf.reduce_sum(mask) + tf.keras.backend.epsilon())
-        metrics[f'water_{i}'] = [mae_on_mean]
+        # --- Water (regression) branch -> distribution head with CRPS ---
+        # Single output that packs [μ, raw_scale] for each obs -> shape [B, 2*nobs[i]]
+        water_name = f'water_{i}'
+        outputs[water_name] = layers.Dense(2 * nobs[i], name=water_name)(x)
+
+        # Use CRPS loss (Gaussian closed form) with your masking convention
+        loss_dict[water_name] = gaussian_crps_loss_factory(nobs[i], mask_min=-999.0, min_sigma=1e-6)
+        # Metric: masked MAE of μ (for easy monitoring)
+        metrics[water_name]   = [masked_mae_from_mu_factory(nobs[i], mask_min=-999.0)]
 
     model = keras.Model(inputs=inputs, outputs=outputs)
     lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
     optimizer = keras.optimizers.Adam(learning_rate=lr)
 
-    model.compile(
-        optimizer=optimizer,
-        loss=loss_dict,
-        metrics=metrics,
-    )
-
+    model.compile(optimizer=optimizer, loss=loss_dict, metrics=metrics)
     return model
 
 def build_classreg_model(hp, npar, nvar, nobs, l_dropout=False):

@@ -211,7 +211,7 @@ def plot_emulator_results(x_val, y_val, model, ppe_info, transform_method, scale
     plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized')
     plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values')
     if plot_uncertainty:
-        plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info)
+        plot_2dhist_unc(y_tgt_inv, y_mdl_inv, y_mdl_unc, ppe_info)
 
 def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
     nvar = ppe_info['nvar']
@@ -224,9 +224,10 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
         ax = fig.add_subplot(gs[i])
         ax.set_aspect('equal')
 
-        vpoint = np.logical_and(np.isfinite(yt_tmp), np.isfinite(yp_tmp))
-        x_tmp = yt_tmp[vpoint]
-        y_tmp = yp_tmp[vpoint]
+        # vpoint = np.logical_and(np.isfinite(yt_tmp), np.isfinite(yp_tmp))
+        vpoint = np.logical_and(yt_tmp>0, yp_tmp>0)
+        x_tmp = np.log10(yt_tmp[vpoint])
+        y_tmp = np.log10(yp_tmp[vpoint])
         unc_tmp = yunc_tmp[vpoint]
         
         # Define bin edges
@@ -292,6 +293,7 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
             hist, xedges, yedges = np.histogram2d(yt_tmp[vpoint], yp_tmp[vpoint], bins=[50, 60])
         elif title == 'Raw values':
             vpoint = np.logical_and(yt_tmp>0, yp_tmp>0)
+            # vpoint = np.logical_and(np.isfinite(yt_tmp), np.isfinite(yp_tmp))
             hist, xedges, yedges = np.histogram2d(np.log10(yt_tmp[vpoint]), np.log10(yp_tmp[vpoint]), bins=[50, 60])
 
         hist_min = 1e-6
@@ -326,7 +328,12 @@ def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
             presence = model(x_val)[f'presence_{i}'].numpy()
             y_model_raw = model(x_val)[f'water_{i}'][:,:nobs[i]].numpy().astype('float64')
             y_model_unc = model(x_val)[f'water_{i}'][:,nobs[i]:].numpy().astype('float64')
-            y_val_raw = y_val[f'water_{i}'].astype('float64')
+            if type(y_val) is dict:
+                y_val_raw = y_val[f'water_{i}'][:,:nobs[i]].astype('float64')
+            else:
+                y_val_raw = y_val[i].astype('float64')
+            presence[presence<0.5] = 0.
+            presence[presence>=0.5] = 1.
             y_mdl_inv.append(presence * inverse_transform_data(y_model_raw, eff0s[i], transform_method, scalers['y'][i]))
             y_tgt_inv.append(inverse_transform_data(y_val_raw, eff0s[i], transform_method, scalers['y'][i]))
             y_mdl.append(y_model_raw)
