@@ -208,12 +208,6 @@ def build_classreg_crps_model(hp, npar, nvar, nobs, l_dropout=False):
     metrics = {}
 
     for i in range(nvar):
-        # --- Presence (classification) branch: unchanged ---
-        pres_name = f'presence_{i}'
-        outputs[pres_name] = layers.Dense(nobs[i], activation='sigmoid', name=pres_name)(x)
-        loss_dict[pres_name] = 'binary_crossentropy'
-        metrics[pres_name]   = ['accuracy']
-
         # --- Water (regression) branch -> distribution head with CRPS ---
         # Single output that packs [μ, raw_scale] for each obs -> shape [B, 2*nobs[i]]
         water_name = f'water_{i}'

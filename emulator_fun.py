@@ -91,7 +91,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
     y_train = {}
     y_val = {}
 
-    ppe_info['nobs'] = [np.prod(i.shape[1:]) for i in ppe_raw_vals]
+    ppe_info['nobs'] = [int(np.prod(i.shape[1:])) for i in ppe_raw_vals]
     ppe_info['ncases'] = tgt_raw_vals[0].shape[0]
     ppe_info['nvar'] = len(var_constraints)
     ppe_info['npar'] = ppe_info['nparam_init'] - ppe_info['n_init']
@@ -325,15 +325,19 @@ def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
 
     for i in range(nvar):
         if type(model(x_val)) is dict: # multi-output model (explicit, with uncertainty)
-            presence = model(x_val)[f'presence_{i}'].numpy()
+            presence = 1.
+            if f'presence_{i}' in model(x_val).keys():
+                presence = model(x_val)[f'presence_{i}'].numpy()
+                presence[presence<0.5] = 0.
+                presence[presence>=0.5] = 1.
+                
             y_model_raw = model(x_val)[f'water_{i}'][:,:nobs[i]].numpy().astype('float64')
             y_model_unc = model(x_val)[f'water_{i}'][:,nobs[i]:].numpy().astype('float64')
             if type(y_val) is dict:
                 y_val_raw = y_val[f'water_{i}'][:,:nobs[i]].astype('float64')
             else:
                 y_val_raw = y_val[i].astype('float64')
-            presence[presence<0.5] = 0.
-            presence[presence>=0.5] = 1.
+            
             y_mdl_inv.append(presence * inverse_transform_data(y_model_raw, eff0s[i], transform_method, scalers['y'][i]))
             y_tgt_inv.append(inverse_transform_data(y_val_raw, eff0s[i], transform_method, scalers['y'][i]))
             y_mdl.append(y_model_raw)
