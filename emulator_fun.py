@@ -11,31 +11,30 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 
 def get_param_interest_idx(dataset):
-    n_param_nevp = dataset.getncattr('n_param_nevp')
-    n_param_condevp = dataset.getncattr('n_param_condevp')
-    n_param_coal = dataset.getncattr('n_param_coal')
-    n_param_sed = dataset.getncattr('n_param_sed')
-    is_perturbed_nevp = bool(dataset.getncattr('is_perturbed_nevp'))
-    is_perturbed_condevp = bool(dataset.getncattr('is_perturbed_condevp'))
-    is_perturbed_coal = bool(dataset.getncattr('is_perturbed_coal'))
-    is_perturbed_sed = bool(dataset.getncattr('is_perturbed_sed'))
+    """
+    Get the indices of the parameters of interest
+    netCDF file should have the following global attributes:
+        'n_param_*': number of parameters for each parameter group [int]
+        'is_perturbed_*': whether the parameter group is perturbed by PPE [int]
+    """
 
+    n_param_attrs = [attr for attr in dataset.ncattrs() if "n_param" in attr]
+    param_group_names = [attr.replace("n_param_", "") for attr in n_param_attrs]
     param_interest_idx = []
-    if is_perturbed_nevp:
-        param_interest_idx.append(np.arange(n_param_nevp))
-    if is_perturbed_condevp:
-        param_interest_idx.append(np.arange(n_param_nevp, 
-                                            n_param_nevp + n_param_condevp))
-    if is_perturbed_coal:
-        param_interest_idx.append(np.arange(n_param_nevp + n_param_condevp, 
-                                            n_param_nevp + n_param_condevp + n_param_coal))
-    if is_perturbed_sed:
-        param_interest_idx.append(np.arange(n_param_nevp + n_param_condevp + n_param_coal, 
-                                            n_param_nevp + n_param_condevp + n_param_coal + n_param_sed))
+    idx_start = 0
+
+    for p_groupname in param_group_names:
+        if dataset.getncattr(f"is_perturbed_{p_groupname}"):
+            param_interest_idx.append(np.arange(idx_start, idx_start + dataset.getncattr(f"n_param_{p_groupname}")))
+        idx_start += dataset.getncattr(f"n_param_{p_groupname}")
     param_interest_idx = np.concatenate(param_interest_idx)
+
     return param_interest_idx
 
 def get_params(basepath, filename):
+    """
+    Get the parameters of interest
+    """
     dataset = nc.Dataset(basepath + filename, mode='r')
     vars_vn = dataset.getncattr('init_var')
     
@@ -60,6 +59,71 @@ def get_params(basepath, filename):
 def get_train_val_tgt_data(basepath, filename, param_train, transform_method, 
                            l_multi_output=False, test_size=0.2, random_state=1,
                            set_nan_to_neg1001=True):
+    """
+    Get the training, validation, and target data.
+    Args:
+        basepath: path to the base directory
+        filename: name of the netCDF file
+            should have the following global attributes:
+                'n_init': number of initial condition variables perturbed by PPE [int]
+                'init_var': names of (varying) initial condition variables [string]
+                'thresholds_eff0': thresholds for the constraint variables [float]
+                'var_constraints': names of constraint variables [string]
+                'n_param_*': number of parameters for each parameter group [int]
+                'is_perturbed_*': whether the parameter group is perturbed by PPE [int]
+            should have the following dimensions:
+                ncases: number of cases run by target model
+                nppe: number of PPE members
+                nparams: number of parameters used by the model being trained
+            should have the following variables:
+                param_names: names of parameters [string] (optional but recommended)
+                [init_var]_PPE: initial condition used by PPE members [float]
+                ppe_[var_constraints]: constraint variables from each PPE member [float]
+                params_PPE: parameters used by the model being trained [float]
+                tgt_[var_constraints]: constraint variables from the target model [float]
+                case_[init_var]: initial condition used by the target model [float]
+        param_train: parameters of interest, output of get_params
+        transform_method: method to transform the data, one of:
+            'standard_scaler': standard scaler
+            'standard_scaler_asinh': standard scaler with asinh transformation
+            'standard_scaler_log': standard scaler with log transformation
+            'minmaxscale_asinh': minmax scaler with asinh transformation
+            'minmaxscale': minmax scaler
+        l_multi_output: whether to use multi-output model: presence of water (boolean) and amount of water (float)
+        test_size: size of the test set
+        random_state: random seed
+        set_nan_to_neg1001: whether to set nan to -1001, 
+    Returns:
+        x_train: training parameters 
+            minmaxscaled
+            shape: [ntrain, nparam_init]
+        x_val: similar to x_train but for validation parameters
+        y_train: training data 
+            user specified transform method: 'standard_scalar_asinh' is preferred for moment values, 'minmaxscale_asinh' is preferred for fall speed
+            has keys: VAR (constraint variable), 'presence_VAR' (presence of constraint variable, if l_multi_output is True)
+            VAR refers to all the constraints, which are elements of `var_constraints`
+            shape: [ntrain, nobs]
+        y_val: similar to y_train but for validation data
+        tgt_data: target data
+            a list of length `nvar` of target data, each element is a 2D array of shape [ncases, nobs]
+        tgt_initvar_matrix
+            the list of initial conditions for the target data
+            shape: [ncases]
+        ppe_info: 
+            information about the PPE, has keys:
+            'nppe': number of PPE members
+            'nvar': number of constraint variables
+            'npar': number of parameters
+            'n_init': number of initial condition variables perturbed by PPE
+            'nparam_init': number of parameters + initial conditions (total perturbed parameters) = nppe + n_init
+            'nobs': number of observations for each constraint variable
+            'ncases': number of cases run by target model (TAU by default)
+            'eff0s': used for asinh transformation, thresholds for the constraint variables, below which the transformed data loglike, above which it's linear like
+            'var_constraints': names of constraint variables
+        scalers: scalers for the data
+            has keys: 'x' and 'y', scalers['y'] is a list of length `nvar` of scalers, each element is a scaler type object
+    """
+
     scalers = {}
 
     # always use minmaxscale for parameters to avoid extrapolation
@@ -105,12 +169,6 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
     ppe_data = []
     tgt_data = []
 
-    if 'V_M' in var_constraints:
-        transform_method = 'minmaxscale'
-        dmin = 0.
-        dmax = 9.2
-        drange = dmax - dmin
-    
     for ivar, eff0 in enumerate(tqdm(eff0s, desc='Transforming data...')):
         cloud_filter = None
 
@@ -137,39 +195,30 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
         ppe_var_presence.append(ppe_raw_val_reshaped > eff0/100)
         tgt_var_presence.append(tgt_raw_val_reshaped > eff0/100)
 
-        if 'V_M' in var_constraints[ivar]:
-            mmscale = preprocessing.MinMaxScaler().fit(ppe_raw_val_reshaped)
-            # manually set all minmaxscale to the same range
-            mmscale.data_min_[:] = dmin
-            mmscale.data_max_[:] = dmax
-            mmscale.data_range_[:] = drange
-            mmscale.scale_[:] = 1/drange
+        if transform_method == 'standard_scaler':
+            ppe_norm.append(ppe_raw_val_reshaped)
+            tgt_norm.append(tgt_raw_val_reshaped)
+            standscale = preprocessing.StandardScaler().fit(ppe_raw_val_reshaped)
+            scalers['y'].append(standscale)
+        elif transform_method == 'standard_scaler_asinh':
+            ppe_norm.append(smooth_linlog(ppe_raw_val_reshaped, eff0))
+            tgt_norm.append(smooth_linlog(tgt_raw_val_reshaped, eff0))
+            standscale = preprocessing.StandardScaler().fit(ppe_norm[-1])
+            scalers['y'].append(standscale)
+        elif transform_method == 'standard_scaler_log':
+            ppe_norm.append(np.log10(ppe_raw_val_reshaped))
+            tgt_norm.append(np.log10(tgt_raw_val_reshaped))
+            standscale = preprocessing.StandardScaler().fit(ppe_norm[-1])
+            scalers['y'].append(standscale)
+        elif transform_method == 'minmaxscale_asinh':
+            ppe_norm.append(smooth_linlog(ppe_raw_val_reshaped, eff0))
+            tgt_norm.append(smooth_linlog(tgt_raw_val_reshaped, eff0))
+            mmscale = preprocessing.MinMaxScaler().fit(ppe_norm[-1])
+            mmscale.data_min_[:] = min(mmscale.data_min_)
+            mmscale.data_max_[:] = max(mmscale.data_max_)
+            mmscale.data_range_[:] = max(mmscale.data_max_) - min(mmscale.data_min_)
+            mmscale.scale_ = 1/mmscale.data_range_
             scalers['y'].append(mmscale)
-        else:
-            if transform_method == 'standard_scaler':
-                ppe_norm.append(ppe_raw_val_reshaped)
-                tgt_norm.append(tgt_raw_val_reshaped)
-                standscale = preprocessing.StandardScaler().fit(ppe_raw_val_reshaped)
-                scalers['y'].append(standscale)
-            elif transform_method == 'standard_scaler_asinh':
-                ppe_norm.append(smooth_linlog(ppe_raw_val_reshaped, eff0))
-                tgt_norm.append(smooth_linlog(tgt_raw_val_reshaped, eff0))
-                standscale = preprocessing.StandardScaler().fit(ppe_norm[-1])
-                scalers['y'].append(standscale)
-            elif transform_method == 'standard_scaler_log':
-                ppe_norm.append(np.log10(ppe_raw_val_reshaped))
-                tgt_norm.append(np.log10(tgt_raw_val_reshaped))
-                standscale = preprocessing.StandardScaler().fit(ppe_norm[-1])
-                scalers['y'].append(standscale)
-            elif transform_method == 'minmaxscale_asinh':
-                ppe_norm.append(smooth_linlog(ppe_raw_val_reshaped, eff0))
-                tgt_norm.append(smooth_linlog(tgt_raw_val_reshaped, eff0))
-                mmscale = preprocessing.MinMaxScaler().fit(ppe_norm[-1])
-                mmscale.data_min_[:] = min(mmscale.data_min_)
-                mmscale.data_max_[:] = max(mmscale.data_max_)
-                mmscale.data_range_[:] = max(mmscale.data_max_) - min(mmscale.data_min_)
-                mmscale.scale_ = 1/mmscale.data_range_
-                scalers['y'].append(mmscale)
 
     mom_consistency_mask = np.min(np.array(ppe_var_presence), axis=0)
     scale_mask = np.max(mom_consistency_mask, axis=0)
@@ -194,12 +243,12 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
         if set_nan_to_neg1001:
             y_train_rawv_single_tmp = np.nan_to_num(y_train_rawv_single_tmp, nan=-1001, neginf=-1001, posinf=-1001)
             y_val_rawv_single_tmp = np.nan_to_num(y_val_rawv_single_tmp, nan=-1001, neginf=-1001, posinf=-1001)
-        y_train[f'water_{ivar}'] = y_train_rawv_single_tmp
-        y_val[f'water_{ivar}'] = y_val_rawv_single_tmp
+        y_train[var_constraints[ivar]] = y_train_rawv_single_tmp
+        y_val[var_constraints[ivar]] = y_val_rawv_single_tmp
 
         if l_multi_output:
-            y_train[f'presence_{ivar}'] = y_train_wpresence_single
-            y_val[f'presence_{ivar}'] = y_val_wpresence_single
+            y_train[f'presence_{var_constraints[ivar]}'] = y_train_wpresence_single
+            y_val[f'presence_{var_constraints[ivar]}'] = y_val_wpresence_single
     
     return x_train, x_val, y_train, y_val, tgt_data, tgt_initvar_matrix, ppe_info, scalers
 

@@ -92,9 +92,6 @@ def masked_mae_from_mu_factory(n_obs, mask_min=-999.0):
     metric.__name__ = "masked_mae_mu"
     return metric
 
-# -------------------------
-# Builder: like your original, but with NLL heads
-# -------------------------
 def build_classreg_unc_model(hp, npar, nvar, nobs, l_dropout=False):
     """
     Presence heads: sigmoid + BCE (unchanged).
@@ -225,6 +222,46 @@ def build_classreg_crps_model(hp, npar, nvar, nobs, l_dropout=False):
     model.compile(optimizer=optimizer, loss=loss_dict, metrics=metrics)
     return model
 
+def plot_history(history):
+    hist = pd.DataFrame(history.history)
+    hist['epoch'] = history.epoch
+
+    plt.figure()
+    plt.xlabel('Epoch')
+    plt.ylabel('Mean Abs Error [MPG]')
+    plt.plot(hist['epoch'], hist['mean_absolute_error'],
+           label='Train Error')
+    plt.plot(hist['epoch'], hist['val_mean_absolute_error'],
+           label = 'Val Error')
+    plt.plot(hist['epoch'],0.1+0.*hist['epoch'],'k:')
+    plt.plot(hist['epoch'],0.2+0.*hist['epoch'],'k:')
+    plt.plot(hist['epoch'],0.3+0.*hist['epoch'],'k:')
+    plt.plot(hist['epoch'],0.4+0.*hist['epoch'],'k:')
+    #plt.ylim([0,1])
+    plt.legend()
+
+    plt.figure()
+    plt.xlabel('Epoch')
+    plt.ylabel('Mean Square Error [$MPG^2$]')
+    plt.plot(hist['epoch'], hist['mean_squared_error'],
+           label='Train Error')
+    plt.plot(hist['epoch'], hist['val_mean_squared_error'],
+           label = 'Val Error')
+    plt.plot(hist['epoch'],0.1+0.*hist['epoch'],'k:')
+    plt.plot(hist['epoch'],0.2+0.*hist['epoch'],'k:')
+    plt.plot(hist['epoch'],0.3+0.*hist['epoch'],'k:')
+    plt.plot(hist['epoch'],0.4+0.*hist['epoch'],'k:')
+    #plt.ylim([0,1])
+    plt.legend()
+    plt.show()
+
+
+
+
+
+
+
+# ------------------------- below are not being used at the moment -------------------------
 def build_classreg_model(hp, npar, nvar, nobs, l_dropout=False):
     inputs = layers.Input(shape=(npar,))
     x = inputs
@@ -410,77 +447,34 @@ def masked_mae(threshold=-999):
         return tf.reduce_sum(abs_err) / (tf.reduce_sum(mask) + tf.keras.backend.epsilon())
     return _masked_mae
     
-class CombinedEarlyStopping(tf.keras.callbacks.Callback):
-    def __init__(self, loss_patience=10, acc_patience=10):
-        super().__init__()
-        self.loss_patience = loss_patience
-        self.acc_patience = acc_patience
-        self.wait_loss = 0
-        self.wait_acc = 0
-        self.best_loss = float('inf')
-        self.best_acc = 0.0
 
-    def on_epoch_end(self, epoch, logs=None):
-        logs = logs or {}
-        # Get the current validation loss for the regression output and the validation accuracy for the classification output.
-        current_loss = logs.get('val_water_loss')
-        current_acc = logs.get('val_presence_accuracy')
+def ensemble_predict(models, x):
+    """
+    Get predictions from ensemble and compute uncertainty.
+    
+    Args:
+        models: List of trained models
+        x: Input data
+    
+    Returns:
+        mean_pred: Mean prediction across ensemble
+        std_pred: Standard deviation (epistemic uncertainty)
+    """
+    predictions = []
+    
+    for model in models:
+        pred = model(x)
+        predictions.append(pred)
+    
+    # Stack predictions
+    stacked_preds = tf.stack(predictions, axis=0)
+    
+    # Calculate mean and std across ensemble
+    mean_pred = tf.reduce_mean(stacked_preds, axis=0)
+    std_pred = tf.math.reduce_std(stacked_preds, axis=0)
+    
+    return mean_pred, std_pred
 
-        # If the metrics are missing, we do nothing.
-        if current_loss is None or current_acc is None:
-            return
-
-        # Update the wait counter for loss
-        if current_loss < self.best_loss:
-            self.best_loss = current_loss
-            self.wait_loss = 0
-        else:
-            self.wait_loss += 1
-
-        # Update the wait counter for accuracy
-        if current_acc > self.best_acc:
-            self.best_acc = current_acc
-            self.wait_acc = 0
-        else:
-            self.wait_acc += 1
-
-        # Only stop training if both metrics have not improved for their patience periods.
-        if self.wait_loss >= self.loss_patience and self.wait_acc >= self.acc_patience:
-            print(f"\nEpoch {epoch + 1}: combined early stopping triggered (loss wait: {self.wait_loss}, acc wait: {self.wait_acc}).")
-            self.model.stop_training = True
-
-def plot_history(history):
-    hist = pd.DataFrame(history.history)
-    hist['epoch'] = history.epoch
-
-    plt.figure()
-    plt.xlabel('Epoch')
-    plt.ylabel('Mean Abs Error [MPG]')
-    plt.plot(hist['epoch'], hist['mean_absolute_error'],
-           label='Train Error')
-    plt.plot(hist['epoch'], hist['val_mean_absolute_error'],
-           label = 'Val Error')
-    plt.plot(hist['epoch'],0.1+0.*hist['epoch'],'k:')
-    plt.plot(hist['epoch'],0.2+0.*hist['epoch'],'k:')
-    plt.plot(hist['epoch'],0.3+0.*hist['epoch'],'k:')
-    plt.plot(hist['epoch'],0.4+0.*hist['epoch'],'k:')
-    #plt.ylim([0,1])
-    plt.legend()
-
-    plt.figure()
-    plt.xlabel('Epoch')
-    plt.ylabel('Mean Square Error [$MPG^2$]')
-    plt.plot(hist['epoch'], hist['mean_squared_error'],
-           label='Train Error')
-    plt.plot(hist['epoch'], hist['val_mean_squared_error'],
-           label = 'Val Error')
-    plt.plot(hist['epoch'],0.1+0.*hist['epoch'],'k:')
-    plt.plot(hist['epoch'],0.2+0.*hist['epoch'],'k:')
-    plt.plot(hist['epoch'],0.3+0.*hist['epoch'],'k:')
-    plt.plot(hist['epoch'],0.4+0.*hist['epoch'],'k:')
-    #plt.ylim([0,1])
-    plt.legend()
-    plt.show()
 
 class PrintDot(keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs):
@@ -598,30 +592,3 @@ def build_ensemble_model(hp, npar, nvar, nobs, n_models=5):
         models.append(model)
     
     return models
-
-def ensemble_predict(models, x):
-    """
-    Get predictions from ensemble and compute uncertainty.
-    
-    Args:
-        models: List of trained models
-        x: Input data
-    
-    Returns:
-        mean_pred: Mean prediction across ensemble
-        std_pred: Standard deviation (epistemic uncertainty)
-    """
-    predictions = []
-    
-    for model in models:
-        pred = model(x)
-        predictions.append(pred)
-    
-    # Stack predictions
-    stacked_preds = tf.stack(predictions, axis=0)
-    
-    # Calculate mean and std across ensemble
-    mean_pred = tf.reduce_mean(stacked_preds, axis=0)
-    std_pred = tf.math.reduce_std(stacked_preds, axis=0)
-    
-    return mean_pred, std_pred
