@@ -90,6 +90,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
             'minmaxscale_asinh': minmax scaler with asinh transformation
             'minmaxscale': minmax scaler
         l_multi_output: whether to use multi-output model: presence of water (boolean) and amount of water (float)
+            set to True for multi-output model, False for CRPS
         test_size: size of the test set
         random_state: random seed
         set_nan_to_neg1001: whether to set nan to -1001, 
@@ -365,6 +366,7 @@ def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
     eff0s = ppe_info['eff0s']
     nvar = ppe_info['nvar']
     nobs = ppe_info['nobs']
+    varcons = ppe_info['var_constraints']
 
     y_mdl_inv = []
     y_tgt_inv = []
@@ -372,18 +374,18 @@ def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
     y_tgt = []
     y_mdl_unc = []
 
-    for i in range(nvar):
+    for i, varcon in enumerate(varcons):
         if type(model(x_val)) is dict: # multi-output model (explicit, with uncertainty)
             presence = 1.
-            if f'presence_{i}' in model(x_val).keys():
-                presence = model(x_val)[f'presence_{i}'].numpy()
+            if f'presence_{varcon}' in model(x_val).keys():
+                presence = model(x_val)[f'presence_{varcon}'].numpy()
                 presence[presence<0.5] = 0.
                 presence[presence>=0.5] = 1.
                 
-            y_model_raw = model(x_val)[f'water_{i}'][:,:nobs[i]].numpy().astype('float64')
-            y_model_unc = model(x_val)[f'water_{i}'][:,nobs[i]:].numpy().astype('float64')
+            y_model_raw = model(x_val)[varcon][:,:nobs[i]].numpy().astype('float64')
+            y_model_unc = model(x_val)[varcon][:,nobs[i]:].numpy().astype('float64')
             if type(y_val) is dict:
-                y_val_raw = y_val[f'water_{i}'][:,:nobs[i]].astype('float64')
+                y_val_raw = y_val[varcon][:,:nobs[i]].astype('float64')
             else:
                 y_val_raw = y_val[i].astype('float64')
             
@@ -406,7 +408,6 @@ def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
     return y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc
 
 def inverse_transform_data(y, eff0, transform_method, scaler):
-    # print(np.max(y), np.min(y), eff0)
     if 'asinh' in transform_method:
         return inv_smooth_linlog(scaler.inverse_transform(y), eff0)
     elif 'log' in transform_method:

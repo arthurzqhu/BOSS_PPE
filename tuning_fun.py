@@ -92,10 +92,10 @@ def masked_mae_from_mu_factory(n_obs, mask_min=-999.0):
     metric.__name__ = "masked_mae_mu"
     return metric
 
-def build_classreg_unc_model(hp, npar, nvar, nobs, l_dropout=False):
+def build_classreg_unc_model(hp, npar, varcons, nobs, l_dropout=False):
     """
-    Presence heads: sigmoid + BCE (unchanged).
-    Water heads: Dense(2*nobs[i]) -> [mu, raw_sigma]; loss = masked Gaussian NLL.
+    Presence heads: sigmoid + BCE.
+    Contraint variable (convar) heads: Dense(2*nobs[i]) -> [mu, raw_sigma]; loss = masked Gaussian NLL.
     """
     inputs = layers.Input(shape=(npar,))
     x = inputs
@@ -106,26 +106,25 @@ def build_classreg_unc_model(hp, npar, nvar, nobs, l_dropout=False):
         dropout_rate = hp.Float("dropout_rate", min_value=0.1, max_value=0.5, step=0.1)
     for i in range(num_shared_layers):
         units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
-        x = layers.Dense(units, activation='swish')(x)
+        x = layers.Dense(units, activation='relu')(x)
         if l_dropout:
             # Keep dropout active at inference if you want MC-dropout samples
             x = layers.Dropout(dropout_rate)(x, training=True)
 
     outputs, loss_dict, metrics = {}, {}, {}
 
-    for i in range(nvar):
+    for i, varcon in enumerate(varcons):
         # Presence (classification) — unchanged
-        pres_name = f'presence_{i}'
+        pres_name = f'presence_{varcon}'
         outputs[pres_name] = layers.Dense(nobs[i], activation='sigmoid', name=pres_name)(x)
         loss_dict[pres_name] = 'binary_crossentropy'
         metrics[pres_name]   = ['accuracy']
 
-        # Water (uncertainty-aware regression): [mu, raw_sigma]
-        water_name = f'water_{i}'
-        outputs[water_name] = layers.Dense(2 * nobs[i], name=water_name)(x)
+        # Contraint variable (convar) (uncertainty-aware regression): [mu, raw_sigma]
+        outputs[varcon] = layers.Dense(2 * nobs[i], name=varcon)(x)
 
-        loss_dict[water_name] = gaussian_nll_loss_factory(nobs[i], mask_min=-999.0, min_sigma=1e-6)
-        metrics[water_name]   = [masked_mae_from_mu_factory(nobs[i], mask_min=-999.0)]
+        loss_dict[varcon] = gaussian_nll_loss_factory(nobs[i], mask_min=-999.0, min_sigma=1e-6)
+        metrics[varcon]   = [masked_mae_from_mu_factory(nobs[i], mask_min=-999.0)]
 
     model = keras.Model(inputs=inputs, outputs=outputs)
 
@@ -186,7 +185,7 @@ def masked_mae_from_mu_factory(n_obs, mask_min=-999.0):
     metric.__name__ = "masked_mae_mu"
     return metric
 
-def build_classreg_crps_model(hp, npar, nvar, nobs, l_dropout=False):
+def build_reg_crps_model(hp, npar, varcons, nobs, l_dropout=False):
     inputs = layers.Input(shape=(npar,))
     x = inputs
 
@@ -204,16 +203,15 @@ def build_classreg_crps_model(hp, npar, nvar, nobs, l_dropout=False):
     loss_dict = {}
     metrics = {}
 
-    for i in range(nvar):
-        # --- Water (regression) branch -> distribution head with CRPS ---
+    for i, varcon in enumerate(varcons):
+        # --- Contraint variable (convar) (regression) branch -> distribution head with CRPS ---
         # Single output that packs [μ, raw_scale] for each obs -> shape [B, 2*nobs[i]]
-        water_name = f'water_{i}'
-        outputs[water_name] = layers.Dense(2 * nobs[i], name=water_name)(x)
+        outputs[varcon] = layers.Dense(2 * nobs[i], name=varcon)(x)
 
         # Use CRPS loss (Gaussian closed form) with your masking convention
-        loss_dict[water_name] = gaussian_crps_loss_factory(nobs[i], mask_min=-999.0, min_sigma=1e-6)
+        loss_dict[varcon] = gaussian_crps_loss_factory(nobs[i], mask_min=-999.0, min_sigma=1e-6)
         # Metric: masked MAE of μ (for easy monitoring)
-        metrics[water_name]   = [masked_mae_from_mu_factory(nobs[i], mask_min=-999.0)]
+        metrics[varcon]   = [masked_mae_from_mu_factory(nobs[i], mask_min=-999.0)]
 
     model = keras.Model(inputs=inputs, outputs=outputs)
     lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
@@ -262,7 +260,7 @@ def plot_history(history):
 
 
 # ------------------------- below are not being used at the moment -------------------------
-def build_classreg_model(hp, npar, nvar, nobs, l_dropout=False):
+def build_classreg_model(hp, npar, varcons, nobs, l_dropout=False):
     inputs = layers.Input(shape=(npar,))
     x = inputs
     
@@ -273,22 +271,22 @@ def build_classreg_model(hp, npar, nvar, nobs, l_dropout=False):
     for i in range(num_shared_layers):
         # Tune number of units for each layer
         units = hp.Int(f"units_{i}", min_value=32, max_value=256, step=32)
-        x = layers.Dense(units, activation='swish')(x)
+        x = layers.Dense(units, activation='relu')(x)
         if l_dropout:
             x = layers.Dropout(dropout_rate)(x, training=True)  # Keep dropout active during inference
 
     outputs = {}
     loss_dict = {}
     metrics = {}
-    for i in range(nvar):
+    for i, varcon in enumerate(varcons):
         # Classifier branch: predicts water presence (binary for each of the 7202 outputs)
-        outputs[f'presence_{i}'] = layers.Dense(nobs[i], activation='sigmoid', name=f'presence_{i}')(x)
-        metrics[f'presence_{i}'] = ['accuracy']
-        loss_dict[f'presence_{i}'] = 'binary_crossentropy'
+        outputs[f'presence_{varcon}'] = layers.Dense(nobs[i], activation='sigmoid', name=f'presence_{varcon}')(x)
+        metrics[f'presence_{varcon}'] = ['accuracy']
+        loss_dict[f'presence_{varcon}'] = 'binary_crossentropy'
         # Regression branch: predicts water content (continuous for each output)
-        outputs[f'water_{i}'] = layers.Dense(nobs[i], name=f"water_{i}")(x)
-        loss_dict[f'water_{i}'] = MaskedMSE(threshold=-999)
-        metrics[f'water_{i}'] = [masked_mae(threshold=-999)]
+        outputs[varcon] = layers.Dense(nobs[i], name=varcon)(x)
+        loss_dict[varcon] = MaskedMSE(threshold=-999)
+        metrics[varcon] = [masked_mae(threshold=-999)]
     
     model = keras.Model(inputs=inputs, outputs=outputs)
     lr = hp.Float('adam_lr', 1e-5, 1e-1, sampling='LOG')
