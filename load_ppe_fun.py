@@ -106,8 +106,8 @@ indvar_name_set = ['diagM3_cloud','diagM3_rain',
                    'V_M0', 'V_M3', 'V_Mx', 'V_My',
                    'V_M0', 'V_M3', 'V_Mx', 'V_My',
                    'dn_liq_coll', 'dmx_liq_coll', 'dmy_liq_coll',
-                   ['cloud_M2', 'rain_M2', 'cloud_M1', 'rain_M1'],
-                   'dm4_sed',
+                   ['cloud_M2', 'rain_M2', 'cloud_M1', 'rain_M1'], 'dm4_sed',
+                   ['cloud_M2', 'rain_M2'], ['cloud_M1', 'rain_M1'], ['cloud_M3', 'rain_M3'], ['cloud_M4', 'rain_M4'],
                    ]
 
 indvar_ename_set = ['CWC','RWC', #1
@@ -158,6 +158,7 @@ indvar_ename_set = ['CWC','RWC', #1
                     'V_M0', 'V_M3', 'V_Mx', 'V_My', #138
                     'mean_dm0_coal', 'mean_dmx_coal', 'mean_dmy_coal', #141
                     'mean_dm', 'dm4_sed', #143
+                    'mean_M0_ss', 'mean_M3_ss', 'mean_Mx_ss', 'mean_My_ss', #147
                     ]
 
 indvar_units_set = [' [kg/kg]',' [kg/kg]',
@@ -208,7 +209,8 @@ indvar_units_set = [' [kg/kg]',' [kg/kg]',
                     ' [m/s]', ' [m/s]', ' [m/s]', ' [m/s]', 
                     ' [m/s]', ' [m/s]', ' [m/s]', ' [m/s]', 
                     ' [1/kg/s]', ' [$m^x$/kg/s]', ' [$m^y$/kg/s]', 
-                    ' [m]', ' [$m^4$/$m^2$/s]'
+                    ' [m]', ' [$m^4$/$m^2$/s]',
+                    ' [1/kg]', ' [$m^3$/kg]', ' [$m^4$/kg]', ' [$m^6$/kg]',
                     ]
 
 # }}}
@@ -383,6 +385,9 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
         case 'mean_dm':
             output_data = np.nanmean(((raw_data['cloud_M1'] + raw_data['rain_M1'])/
                                      (raw_data['cloud_M2'] + raw_data['rain_M2']))**(1./3.))
+        case 'mean_M0_ss' | 'mean_M3_ss' | 'mean_Mx_ss' | 'mean_My_ss':
+            data_timeseries = raw_data[var_name[0]] + raw_data[var_name[1]]
+            output_data = np.nanmean(data_timeseries[:,-60:]) # last 60 steps, or 5 mins
 
     # }}}
 

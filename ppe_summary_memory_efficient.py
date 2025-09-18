@@ -19,12 +19,12 @@ def main():
     """Main function to process PPE data with memory efficiency"""
     # Configuration
     vnum = '0001'
-    nikki = '2025-08-28'
+    nikki = '2025-09-16'
     target_nikki = 'target'
     momxy = '46'
     
-    ppe_config = 'condcoal_r1'
-    target_simconfig = 'condcoal_dt5'
+    ppe_config = 'condevap_ppe'
+    target_simconfig = 'condevap'
     
     if not os.path.exists(lp.nc_dir):
         os.makedirs(lp.nc_dir)
@@ -40,9 +40,11 @@ def main():
 
     # snapshot_var_idx = [4, 86, 119, 120] # LWP, LNP, Mx_path, My_path
     # snapshot_var_idx = [86] # LNP, Mx_path, My_path
-    # snapshot_var_idx = [115, 116, 117, 118] # M3, M0, Mx, My
-    snapshot_var_idx = [116, 117, 118] # M0, Mx, My
+    snapshot_var_idx = [115, 116, 117, 118] # M3, M0, Mx, My
+    # snapshot_var_idx = [116, 117, 118] # M0, Mx, My
     # snapshot_var_idx = [135, 136, 137, 138]
+    # snapshot_var_idx = []
+    # summary_var_idx = [144, 145, 146, 147]
     summary_var_idx = []
     # summary_var_idx = [95, 107, 121, 122]
     # snapshot_var_idx = [21, 97, 98, 99] # dm3_sed, dm0_sed, dm6_sed, dm9_sed
@@ -159,7 +161,7 @@ def main():
         if 'V_M' in var_ename:
             global_attrs['thresholds_eff0'].append(0.1)
         else:
-            global_attrs['thresholds_eff0'].append(np.nanpercentile(value_greater_0, 1))
+            global_attrs['thresholds_eff0'].append(np.nanpercentile(value_greater_0, 10))
     
     print("Thresholds:", global_attrs['thresholds_eff0'])
     
