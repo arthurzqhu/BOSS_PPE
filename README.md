@@ -23,7 +23,7 @@
         - **case_[init_var]** (ncases): initial condition used by the target model [float]
 3. Pick a `transform_method`:
    - `standard_scaler`
-   - `standard_scaler_asinh`: smooth log-linear transition at `thresholds_eff0` specified in the summary file. Preferred for 
+   - `standard_scaler_asinh`: smooth log-linear transition at `thresholds_eff0` specified in the summary file. Preferred for variables ranging across multiple orders of magnitude but insignificantly small values don't have a large impact on the training/sampling (unlike log transformation).
    - `standard_scaler_log`
    - `minmaxscale_asinh`: also need to specify `threshold_eff0`
    - `minmaxscale` <br>
