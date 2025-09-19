@@ -56,7 +56,7 @@ def get_params(basepath, filename):
             'vals': params_train,
             'param_interest_idx': param_interest_idx}
 
-def get_train_val_tgt_data(basepath, filename, param_train, transform_method, 
+def get_train_val_tgt_data(basepath, filename, param_train, transform_methods, 
                            l_multi_output=False, test_size=0.2, random_state=1,
                            set_nan_to_neg1001=True):
     """
@@ -83,7 +83,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
                 tgt_[var_constraints]: constraint variables from the target model [float]
                 case_[init_var]: initial condition used by the target model [float]
         param_train: parameters of interest, output of get_params
-        transform_method: method to transform the data, one of:
+        transform_methods: a string or a list of shape [nvar] of strings describing methods to transform the data, one of:
             'standard_scaler': standard scaler
             'standard_scaler_asinh': standard scaler with asinh transformation
             'standard_scaler_log': standard scaler with log transformation
@@ -174,6 +174,10 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
 
     for ivar, varcon in enumerate(tqdm(var_constraints, desc='Transforming data...')):
         eff0 = eff0s[ivar]
+        if isinstance(transform_methods, str):
+            transform_method = transform_methods
+        else:
+            transform_method = transform_methods[ivar]
 
         if ppe_raw_vals[ivar].ndim >= 2:
             ppe_raw_val_reshaped = np.reshape(ppe_raw_vals[ivar], (ppe_info['nppe'], np.prod(ppe_raw_vals[ivar].shape[1:])))
@@ -251,10 +255,10 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
     
     return x_train, x_val, y_train, y_val, tgt_data, tgt_initvar_matrix, ppe_info, scalers
 
-def plot_emulator_results(x_val, y_val, model, ppe_info, transform_method, scalers,
+def plot_emulator_results(x_val, y_val, model, ppe_info, transform_methods, scalers,
                           plot_uncertainty=False):
 
-    y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc = apply_model(model, x_val, y_val, ppe_info, transform_method, scalers)
+    y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc = apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers)
     
     plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized')
     plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values')
@@ -360,7 +364,7 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
     fig.suptitle(title)
     fig.tight_layout()
 
-def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
+def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
     eff0s = ppe_info['eff0s']
     nvar = ppe_info['nvar']
     nobs = ppe_info['nobs']
@@ -373,6 +377,12 @@ def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
     y_mdl_unc = []
 
     for i, varcon in enumerate(varcons):
+        
+        if isinstance(transform_methods, str):
+            transform_method = transform_methods
+        else:
+            transform_method = transform_methods[i]
+
         if type(model(x_val)) is dict:
             presence = 1.
             if f'presence_{varcon}' in model(x_val).keys():

@@ -21,13 +21,12 @@
         - **params_PPE** (nppe, nparams): parameters used by the model being trained [float]
         - **tgt_[var_constraints]** (ncases): constraint variables from the target model [float]
         - **case_[init_var]** (ncases): initial condition used by the target model [float]
-3. Pick a `transform_method`:
+3. Pick a `transform_method` (in string or a list of strings):
    - `standard_scaler`
    - `standard_scaler_asinh`: smooth log-linear transition at `thresholds_eff0` specified in the summary file. Preferred for variables ranging across multiple orders of magnitude but insignificantly small values don't have a large impact on the training/sampling (unlike log transformation).
    - `standard_scaler_log`
    - `minmaxscale_asinh`: also need to specify `threshold_eff0`
    - `minmaxscale` <br>
-   (**Note**: only supports one `transform_method` for all variables in the current version, but specifying one for each variable should be easy to implement.)
 4. Pick a ML architecture:
    - CRPS (preferred)
      - `build_reg_crps_model` in `tuning_fun.py`
