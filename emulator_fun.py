@@ -234,6 +234,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
             dat[np.isinf(dat)] = np.nan
 
     for ivar, (ppe_varp_tmp, ppe_varr_tmp) in enumerate(zip(ppe_var_presence, ppe_data)):
+        varcon = var_constraints[ivar]
         x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
             mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
         _, _, y_train_rawv_single_tmp, y_val_rawv_single_tmp =\
