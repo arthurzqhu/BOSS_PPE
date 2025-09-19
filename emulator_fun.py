@@ -132,6 +132,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
     x_all = minmaxscale.transform(param_train['vals'])
     scalers['x'] = minmaxscale
     scalers['y'] = []
+    nvar = len(var_constraints)
 
     ppe_info = {}
     dataset = nc.Dataset(basepath + filename, mode='r')
@@ -152,13 +153,14 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
     ppe_raw_vals = [dataset.variables[i][:] for i in ppe_var_names]
     tgt_var_names = ['tgt_' + i for i in var_constraints]
     tgt_raw_vals = [dataset.variables[i][:] for i in tgt_var_names]
+    
 
     y_train = {}
     y_val = {}
 
     ppe_info['nobs'] = [int(np.prod(i.shape[1:])) for i in ppe_raw_vals]
     ppe_info['ncases'] = tgt_raw_vals[0].shape[0]
-    ppe_info['nvar'] = len(var_constraints)
+    ppe_info['nvar'] = nvar
     ppe_info['npar'] = ppe_info['nparam_init'] - ppe_info['n_init']
     ppe_info['eff0s'] = eff0s
     ppe_info['var_constraints'] = var_constraints
@@ -170,28 +172,18 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
     ppe_data = []
     tgt_data = []
 
-    for ivar, eff0 in enumerate(tqdm(eff0s, desc='Transforming data...')):
-        cloud_filter = None
+    for ivar, varcon in enumerate(tqdm(var_constraints, desc='Transforming data...')):
+        eff0 = eff0s[ivar]
 
-        # # WARNING: only use this filter when advection is off
-        # cloud_filter = ppe_raw_vals[ivar][0]>0.
-        n_cloud = np.sum(cloud_filter)
-            
-        if cloud_filter is not None:
-            ppe_raw_val_reshaped = ppe_raw_vals[ivar][:, cloud_filter].reshape(ppe_info['nppe'], n_cloud)
-            tgt_raw_val_reshaped = tgt_raw_vals[ivar][:, cloud_filter].reshape(ppe_info['ncases'], n_cloud)
-            ppe_raw_val_reshaped[ppe_raw_val_reshaped<0] = 0.
-            tgt_raw_val_reshaped[tgt_raw_val_reshaped<0] = 0.
+        if ppe_raw_vals[ivar].ndim >= 2:
+            ppe_raw_val_reshaped = np.reshape(ppe_raw_vals[ivar], (ppe_info['nppe'], np.prod(ppe_raw_vals[ivar].shape[1:])))
+            tgt_raw_val_reshaped = np.reshape(tgt_raw_vals[ivar], (ppe_info['ncases'], np.prod(tgt_raw_vals[ivar].shape[1:])))
+            # WARNING: temporary limiter
+            # ppe_raw_val_reshaped[ppe_raw_val_reshaped<0] = 0.
+            # tgt_raw_val_reshaped[tgt_raw_val_reshaped<0] = 0.
         else:
-            if ppe_raw_vals[ivar].ndim >= 2:
-                ppe_raw_val_reshaped = np.reshape(ppe_raw_vals[ivar], (ppe_info['nppe'], np.prod(ppe_raw_vals[ivar].shape[1:])))
-                tgt_raw_val_reshaped = np.reshape(tgt_raw_vals[ivar], (ppe_info['ncases'], np.prod(tgt_raw_vals[ivar].shape[1:])))
-                # WARNING: temporary limiter
-                ppe_raw_val_reshaped[ppe_raw_val_reshaped<0] = 0.
-                tgt_raw_val_reshaped[tgt_raw_val_reshaped<0] = 0.
-            else:
-                ppe_raw_val_reshaped = ppe_raw_vals[ivar].reshape(-1, 1)
-                tgt_raw_val_reshaped = tgt_raw_vals[ivar].reshape(-1, 1)
+            ppe_raw_val_reshaped = ppe_raw_vals[ivar].reshape(-1, 1)
+            tgt_raw_val_reshaped = tgt_raw_vals[ivar].reshape(-1, 1)
 
         ppe_var_presence.append(ppe_raw_val_reshaped > eff0/100)
         tgt_var_presence.append(tgt_raw_val_reshaped > eff0/100)
@@ -211,6 +203,11 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
             tgt_norm.append(np.log10(tgt_raw_val_reshaped))
             standscale = preprocessing.StandardScaler().fit(ppe_norm[-1])
             scalers['y'].append(standscale)
+        elif transform_method == 'minmaxscale':
+            ppe_norm.append(ppe_raw_val_reshaped)
+            tgt_norm.append(tgt_raw_val_reshaped)
+            mmscale = preprocessing.MinMaxScaler().fit(ppe_raw_val_reshaped)
+            scalers['y'].append(mmscale)
         elif transform_method == 'minmaxscale_asinh':
             ppe_norm.append(smooth_linlog(ppe_raw_val_reshaped, eff0))
             tgt_norm.append(smooth_linlog(tgt_raw_val_reshaped, eff0))
@@ -244,12 +241,12 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
         if set_nan_to_neg1001:
             y_train_rawv_single_tmp = np.nan_to_num(y_train_rawv_single_tmp, nan=-1001, neginf=-1001, posinf=-1001)
             y_val_rawv_single_tmp = np.nan_to_num(y_val_rawv_single_tmp, nan=-1001, neginf=-1001, posinf=-1001)
-        y_train[var_constraints[ivar]] = y_train_rawv_single_tmp
-        y_val[var_constraints[ivar]] = y_val_rawv_single_tmp
+        y_train[varcon] = y_train_rawv_single_tmp
+        y_val[varcon] = y_val_rawv_single_tmp
 
         if l_multi_output:
-            y_train[f'presence_{var_constraints[ivar]}'] = y_train_wpresence_single
-            y_val[f'presence_{var_constraints[ivar]}'] = y_val_wpresence_single
+            y_train[f'presence_{varcon}'] = y_train_wpresence_single
+            y_val[f'presence_{varcon}'] = y_val_wpresence_single
     
     return x_train, x_val, y_train, y_val, tgt_data, tgt_initvar_matrix, ppe_info, scalers
 
@@ -375,7 +372,7 @@ def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
     y_mdl_unc = []
 
     for i, varcon in enumerate(varcons):
-        if type(model(x_val)) is dict: # multi-output model (explicit, with uncertainty)
+        if type(model(x_val)) is dict:
             presence = 1.
             if f'presence_{varcon}' in model(x_val).keys():
                 presence = model(x_val)[f'presence_{varcon}'].numpy()
@@ -389,29 +386,34 @@ def apply_model(model, x_val, y_val, ppe_info, transform_method, scalers):
             else:
                 y_val_raw = y_val[i].astype('float64')
             
-            y_mdl_inv.append(presence * inverse_transform_data(y_model_raw, eff0s[i], transform_method, scalers['y'][i]))
-            y_tgt_inv.append(inverse_transform_data(y_val_raw, eff0s[i], transform_method, scalers['y'][i]))
+            y_mdl_inv.append(presence * inverse_transform_data(y_model_raw, transform_method, scalers['y'][i], eff0s[i]))
+            y_tgt_inv.append(inverse_transform_data(y_val_raw, transform_method, scalers['y'][i], eff0s[i]))
             y_mdl.append(y_model_raw)
             y_tgt.append(y_val_raw)
             y_mdl_unc.append(y_model_unc)
-        else: # single-output model (implicit, no uncertainty calculation implemented)
-            y_model = model(x_val)[i].numpy().astype('float64')
-            y_val_raw = y_val[i].numpy().astype('float64')
-            y_mdl_inv.append(inverse_transform_data(y_model, eff0s[i], transform_method, scalers['y'][i]))
-            y_tgt_inv.append(inverse_transform_data(y_val_raw, eff0s[i], transform_method, scalers['y'][i]))
-            y_mdl.append(y_model)
-            y_tgt.append(y_val[i].numpy().astype('float64'))
+        else:
+            raise ValueError('model output is not a dictionary. Not yet implemented.')
+            # y_model = model(x_val)[i].numpy().astype('float64')
+            # y_val_raw = y_val[i].numpy().astype('float64')
+            # y_mdl_inv.append(inverse_transform_data(y_model, transform_method, scalers['y'][i], eff0s[i]))
+            # y_tgt_inv.append(inverse_transform_data(y_val_raw, transform_method, scalers['y'][i], eff0s[i]))
+            # y_mdl.append(y_model)
+            # y_tgt.append(y_val[i].numpy().astype('float64'))
     
     for var_tmp in y_tgt:
         var_tmp[var_tmp<-999] = np.nan
     
     return y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc
 
-def inverse_transform_data(y, eff0, transform_method, scaler):
+def inverse_transform_data(y, transform_method, scaler, eff0=None):
     if 'asinh' in transform_method:
+        if eff0 is None:
+            raise ValueError('eff0 is required for asinh transformation')
         return inv_smooth_linlog(scaler.inverse_transform(y), eff0)
     elif 'log' in transform_method:
         return scaler.inverse_transform(10**y)
+    else:
+        return scaler.inverse_transform(y)
 
 smooth_linlog = lambda y, eff0: eff0*np.arcsinh(y/eff0)
 inv_smooth_linlog = lambda y, eff0: eff0*np.sinh(y/eff0)
