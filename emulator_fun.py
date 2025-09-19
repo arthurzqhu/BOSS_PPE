@@ -132,7 +132,6 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
     x_all = minmaxscale.transform(param_train['vals'])
     scalers['x'] = minmaxscale
     scalers['y'] = []
-    nvar = len(var_constraints)
 
     ppe_info = {}
     dataset = nc.Dataset(basepath + filename, mode='r')
@@ -149,6 +148,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_method,
 
     eff0s = getattr(dataset, 'thresholds_eff0')
     var_constraints = getattr(dataset, 'var_constraints')
+    nvar = len(var_constraints)
     ppe_var_names = ['ppe_' + i for i in var_constraints]
     ppe_raw_vals = [dataset.variables[i][:] for i in ppe_var_names]
     tgt_var_names = ['tgt_' + i for i in var_constraints]
