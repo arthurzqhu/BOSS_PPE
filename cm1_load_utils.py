@@ -74,6 +74,7 @@ output_var_set = {
                   'v_curtain_slice': {'var_source': 'vinterp', 'var_unit': 'm/s', 'longname': 'Horizontal Wind (y) Curtain Slice'},
                   'w_curtain_slice': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind (z) Curtain Slice'},
                   'w': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind (z)'},
+                  'prate_dm': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Domain-Mean Precipitation Rate'},
                   'prate_dm_last2hrmean': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Last 2hr Mean Domain-Mean Precipitation Rate'},
                   }
 
@@ -203,6 +204,8 @@ def var2phys(var_name, file_paths, dt):
                 var_data.append(np.mean(rawdata, axis=(0,2)))
             elif '_curtain_slice' in var_name:
                 var_data.append(rawdata[0, :, 64, :])
+            elif 'prate_dm' in var_name:
+                var_data.append(np.mean(rawdata))
             else:
                 var_data.append(rawdata[0, ...])
         var_data = np.array(var_data)
