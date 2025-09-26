@@ -10,7 +10,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 
-def get_param_interest_idx(dataset):
+def get_param_interest_idx(dataset, return_perturbed_groupname=False):
     """
     Get the indices of the parameters of interest
     netCDF file should have the following global attributes:
@@ -21,15 +21,21 @@ def get_param_interest_idx(dataset):
     n_param_attrs = [attr for attr in dataset.ncattrs() if "n_param" in attr]
     param_group_names = [attr.replace("n_param_", "") for attr in n_param_attrs]
     param_interest_idx = []
+    perturbed_pgroup = []
     idx_start = 0
 
     for p_groupname in param_group_names:
         if dataset.getncattr(f"is_perturbed_{p_groupname}"):
             param_interest_idx.append(np.arange(idx_start, idx_start + dataset.getncattr(f"n_param_{p_groupname}")))
+            perturbed_pgroup.append(p_groupname)
         idx_start += dataset.getncattr(f"n_param_{p_groupname}")
-    param_interest_idx = np.concatenate(param_interest_idx)
+    # param_interest_idx = np.concatenate(param_interest_idx)
 
-    return param_interest_idx
+    if return_perturbed_groupname:
+        return param_interest_idx, perturbed_pgroup
+    else:
+        return param_interest_idx
+    
 
 def get_params(basepath, filename):
     """
@@ -38,7 +44,7 @@ def get_params(basepath, filename):
     dataset = nc.Dataset(basepath + filename, mode='r')
     vars_vn = dataset.getncattr('init_var')
     
-    param_interest_idx = get_param_interest_idx(dataset)
+    param_interest_idx = np.concatenate(get_param_interest_idx(dataset))
 
     if isinstance(vars_vn, str):
         vars_vn = [vars_vn]
@@ -222,12 +228,12 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
             mmscale.scale_ = 1/mmscale.data_range_
             scalers['y'].append(mmscale)
 
-    mom_consistency_mask = np.min(np.array(ppe_var_presence), axis=0)
-    scale_mask = np.max(mom_consistency_mask, axis=0)
+    # mom_consistency_mask = np.min(np.array(ppe_var_presence), axis=0)
+    # scale_mask = np.max(mom_consistency_mask, axis=0)
 
     if len(ppe_norm) > 0:
         for i, iscale in enumerate(scalers['y']):
-            iscale.scale_ = iscale.scale_ * scale_mask
+            # iscale.scale_ = iscale.scale_ * scale_mask
             dat = iscale.transform(ppe_norm[i])
             # dat[ppe_norm[i].mask] = np.nan
             ppe_data.append(dat)
@@ -237,11 +243,11 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
             tgt_data.append(dat)
             dat[np.isinf(dat)] = np.nan
 
-    for ivar, (ppe_varp_tmp, ppe_varr_tmp) in enumerate(zip(ppe_var_presence, ppe_data)):
+    for ivar, ppe_varr_tmp in enumerate(ppe_data):
         varcon = var_constraints[ivar]
-        x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
-            mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
-        _, _, y_train_rawv_single_tmp, y_val_rawv_single_tmp =\
+        # x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
+        #     mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
+        x_train, x_val, y_train_rawv_single_tmp, y_val_rawv_single_tmp =\
             mod_sec.train_test_split(x_all, ppe_varr_tmp, test_size=test_size, random_state=random_state)
         if set_nan_to_neg1001:
             y_train_rawv_single_tmp = np.nan_to_num(y_train_rawv_single_tmp, nan=-1001, neginf=-1001, posinf=-1001)
@@ -250,8 +256,9 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
         y_val[varcon] = y_val_rawv_single_tmp
 
         if l_multi_output:
-            y_train[f'presence_{varcon}'] = y_train_wpresence_single
-            y_val[f'presence_{varcon}'] = y_val_wpresence_single
+            raise ValueError('multi-output model is not yet implemented')
+            # y_train[f'presence_{varcon}'] = y_train_wpresence_single
+            # y_val[f'presence_{varcon}'] = y_val_wpresence_single
     
     return x_train, x_val, y_train, y_val, tgt_data, tgt_initvar_matrix, ppe_info, scalers
 
@@ -323,8 +330,8 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
         ax_max = min([ax.get_ylim()[1]] + [ax.get_xlim()[1]])
         ax.plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
         ax.set_title(var_constraints[i])
-        ax.set_xlabel('normalized BOSS output')
-        ax.set_ylabel('normalized emulator output')
+        ax.set_xlabel('log10 BOSS output')
+        ax.set_ylabel('log10 emulator output')
 
     fig.tight_layout()
         
@@ -360,6 +367,8 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
         ax_max = min([ax.get_ylim()[1]] + [ax.get_xlim()[1]])
         plt.plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
         plt.title(var_constraints[i])
+        ax.set_xlabel('log10 target output')
+        ax.set_ylabel('log10 emulator output')
     
     fig.suptitle(title)
     fig.tight_layout()

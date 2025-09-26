@@ -15,10 +15,10 @@ def detailed_memory_analysis():
     print(f"Text Segment: {mem_info.text / 1024**3:.2f} GB")
     print(f"Data Segment: {mem_info.data / 1024**3:.2f} GB")
     
-    # Check if there's a large gap between RSS and VMS
-    if mem_info.vms > mem_info.rss * 1.5:
-        print(f"\n⚠️  Large VMS-RSS gap: {(mem_info.vms - mem_info.rss) / 1024**3:.2f} GB")
-        print("This might indicate memory fragmentation or external libraries")
+    # # Check if there's a large gap between RSS and VMS
+    # if mem_info.vms > mem_info.rss * 1.5:
+    #     print(f"\n⚠️  Large VMS-RSS gap: {(mem_info.vms - mem_info.rss) / 1024**3:.2f} GB")
+    #     print("This might indicate memory fragmentation or external libraries")
 
 def get_top_memory_vars(local_vars, top_n=10, l_return=True):
     var_mem = []

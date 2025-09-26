@@ -12,8 +12,8 @@ import util_fun as uf
 
 nikki = ''
 target_nikki = 'target'
-sim_config = 'NCE_predNc_actwidth_r1_dfl0.3'
-target_sim_config = 'NCE'
+sim_config = 'nosed_ppe_r0_coal'
+target_sim_config = 'nosed'
 
 plot_dir = f"plots/{nikki}/{sim_config}/"
 if not os.path.exists(plot_dir):
@@ -25,9 +25,9 @@ train_mp = 'SLC-BOSS'
 mconfigs = os.listdir(cl.output_dir + nikki)
 vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
 var_interest = []
-# var_interest += ['M0_dmprof', 'M3_dmprof', 'M4_dmprof', 'M6_dmprof'] # domain-mean profiles
-# var_interest += ['M0_dmpath', 'M3_dmpath', 'M4_dmpath', 'M6_dmpath'] # domain-mean path
 var_interest += ['M0_last2hrmean', 'M3_last2hrmean', 'M4_last2hrmean', 'M6_last2hrmean'] # domain-mean path
+# var_interest += ['M0_last2hrmean', 'M3_last2hrmean', 'M4_last2hrmean', 'M6_last2hrmean', 'prate_dm_last2hrmean'] # domain-mean path
+# var_interest += ['sfM0_last2hrmean', 'sfM3_last2hrmean', 'sfM4_last2hrmean', 'sfM6_last2hrmean'] # domain-mean fluxes
 # var_interest += ['M0_curtain_mean', 'M3_curtain_mean', 'M4_curtain_mean', 'M6_curtain_mean'] # curtain
 # var_interest += ['w', 'w_dmprof', 'w_curtain_slice', 'w_curtain_mean'] # 4D var
 # var_interest += ['u_dmprof', 'v_dmprof', 'w_dmprof']
@@ -60,7 +60,7 @@ for ippe in tqdm(ppe_idx, desc='loading BOSS data'):
 
 uf.detailed_memory_analysis()
 
-fig, axs = plt.subplots(2, 2, figsize=(12, 8), sharex=True)
+fig, axs = plt.subplots(2, 2, figsize=(12, 12), sharex=True)
 axs = axs.flatten()
 na = []
 for initcond_combo in itertools.product(*vars_strs):

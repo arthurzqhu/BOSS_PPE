@@ -52,12 +52,12 @@ output_var_set = {
                   'M5_curtain_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
                   'M6_curtain_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
                   'M9_curtain_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'M9'},
-                  'M0_last2hrmean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Last 2hr Mean LNP'}, 
-                  'M3_last2hrmean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Last 2hr Mean LWC'}, 
-                  'M4_last2hrmean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean M4'},
-                  'M5_last2hrmean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Last 2hr Mean M5'},
-                  'M6_last2hrmean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean M6'},
-                  'M9_last2hrmean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Last 2hr Mean M9'},
+                  'M0_path_last2hrmean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Last 2hr Mean LNP'}, 
+                  'M3_path_last2hrmean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Last 2hr Mean LWC'}, 
+                  'M4_path_last2hrmean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean M4'},
+                  'M5_path_last2hrmean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Last 2hr Mean M5'},
+                  'M6_path_last2hrmean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean M6'},
+                  'M9_path_last2hrmean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Last 2hr Mean M9'},
                   'M0': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNP'}, 
                   'M3': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
                   'M4': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
@@ -76,6 +76,18 @@ output_var_set = {
                   'w': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind (z)'},
                   'prate_dm': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Domain-Mean Precipitation Rate'},
                   'prate_dm_last2hrmean': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Last 2hr Mean Domain-Mean Precipitation Rate'},
+                  'sedflux_m0': {'var_source': 'sedflux_M0', 'var_unit': '1/m^2/s', 'longname': 'Sedflux M0'},
+                  'sedflux_m3': {'var_source': 'sedflux_M3', 'var_unit': 'kg/m^2/s', 'scale': M3toQ, 'longname': 'Sedflux M3'},
+                  'sedflux_m4': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/m^2/s', 'scale': 1e-4**4, 'longname': 'Sedflux M4'},
+                  'sedflux_m6': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/m^2/s', 'scale': 1e-4**6, 'longname': 'Sedflux M6'},
+                  'sfM0_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/m^2/s', 'longname': 'Last 2hr Mean Sedflux M0'},
+                  'sfM3_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/m^2/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3'},
+                  'sfM4_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/m^2/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4'},
+                  'sfM6_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/m^2/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6'},
+                  'sfM0_per5lvl_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/m^2/s', 'longname': 'Last 2hr Mean Sedflux M0 per 5 levels'},
+                  'sfM3_per5lvl_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/m^2/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3 per 5 levels'},
+                  'sfM4_per5lvl_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/m^2/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4 per 5 levels'},
+                  'sfM6_per5lvl_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/m^2/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6 per 5 levels'},
                   }
 
 def get_ppe_idx(file_info):
@@ -87,133 +99,143 @@ def get_ppe_idx(file_info):
     return ppe_idx
 
 def load_cm1(file_info, var_interest, nc_dict, continuous_ic, ippe=0):
-    mp = file_info['mp_config']
-    vars_vn = file_info['vars_vn']
-    fdir = file_info['dir']
-    fdate = file_info['date']
+    mp          = file_info['mp_config']
+    vars_vn     = file_info['vars_vn']
+    fdir        = file_info['dir']
+    fdate       = file_info['date']
     fsim_config = file_info['sim_config']
-    fn_prefix = "cm1out_0"
-    fn_suffix = ".nc"
+    fn_prefix, fn_suffix = "cm1out_0", ".nc"
 
     if continuous_ic:
         file_pattern = f"{fdir}{fdate}/{fsim_config}/{mp}/{ippe}/{fn_prefix}*{fn_suffix}"
-        ic_str = 'cic' # = continuous initial condition
+        ic_str = 'cic'
     else:
         ic_str = "".join(file_info['vars_str'])
         vars_dir = "/".join([istr for istr in file_info['vars_str']])
         file_pattern = f"{fdir}{fdate}/{fsim_config}/{vars_dir}/{mp}/{fn_prefix}*{fn_suffix}"
 
-    try:
-        file_paths = glob(file_pattern)
-        file_paths = sorted(file_paths, key=last_number_key)
-    except IndexError:
-        print('perhaps no such file at:' + file_pattern)
+    file_paths = sorted(glob(file_pattern), key=last_number_key)
+    if not file_paths:
+        raise FileNotFoundError(f"No files match: {file_pattern}")
 
-    if 'time' not in nc_dict.keys():
-        time_len = len(file_paths)
-        time_array = np.zeros(time_len)
-        for i_file, file_path in enumerate(file_paths):
-            time_array[i_file] = nc.Dataset(file_path)['time'][:]
+    # time vector
+    if 'time' not in nc_dict:
+        time_array = np.empty(len(file_paths), dtype=float)
+        for i_file, fp in enumerate(file_paths):
+            with nc.Dataset(fp, 'r') as ds:
+                t = np.asarray(ds['time'][:]).ravel()
+                time_array[i_file] = t[0] if t.size else np.nan
         nc_dict['time'] = time_array
 
-    dataset = nc.Dataset(file_paths[0])
-    # no need to do two tries anymore
+    # open first file to grab coords/attrs, then close it
+    with nc.Dataset(file_paths[0], 'r') as ds0:
+        nc_dict.setdefault(ic_str, {})
+        nc_dict[ic_str].setdefault(mp, {})
+        nc_dict['init_var'] = vars_vn
+        if ippe > 0:
+            nc_dict[ic_str][mp].setdefault(ippe, {})
 
-    nc_dict.setdefault(ic_str, {})
-    nc_dict[ic_str].setdefault(mp, {})
-    if ippe > 0:
-        nc_dict[ic_str][mp].setdefault(ippe, {})
-
-    for vn in vars_vn:
-        if ippe == 0:
-            try:
-                nc_dict[vn + '_units'] = dataset.getncattr('nanew2_units')
-                nc_dict[ic_str][mp][vn] = dataset.getncattr('nanew2')
-            except:
-                nc_dict[vn + '_units'] = dataset.getncattr('na_units')            
-                nc_dict[ic_str][mp][vn] = dataset.getncattr('na')
-        else:
-            nc_dict[vn + '_units'] = dataset.getncattr('na_units')            
-            nc_dict[ic_str][mp][ippe][vn] = dataset.getncattr('na')
-
-    dt = nc_dict['time'][1] - nc_dict['time'][0]
-
-    if 'z' not in nc_dict.keys():
-        nc_dict['z'] = dataset['zh'][:]
-
-    if 'x' not in nc_dict.keys():
-        nc_dict['x'] = dataset['xh'][:]
-
-    if 'y' not in nc_dict.keys():
-        nc_dict['y'] = dataset['yh'][:]
-    
-    if 'BOSS' in mp:
-        nc_dict['n_param_nevp'] = dataset.getncattr('boss_n_param_nevp')
-        nc_dict['n_param_condevp'] = dataset.getncattr('boss_n_param_condevp')
-        nc_dict['n_param_coal'] = dataset.getncattr('boss_n_param_coal')
-        nc_dict['n_param_sed'] = dataset.getncattr('boss_n_param_sed')
+        # vn attributes (variable names)
+        for vn in vars_vn:
+            nc_dict[vn + '_units'] = ds0.getncattr(vn + '_units')
+            keydst = nc_dict[ic_str][mp] if ippe == 0 else nc_dict[ic_str][mp][ippe]
+            keydst[vn] = ds0.getncattr(vn)
         
-        is_ppe = bool(dataset.getncattr('boss_is_ppe'))
-        if is_ppe:
-            nc_dict['is_perturbed_nevp'] = dataset.getncattr('boss_param_perturbed_nevp')
-            nc_dict['is_perturbed_condevp'] = dataset.getncattr('boss_param_perturbed_condevp')
-            nc_dict['is_perturbed_coal'] = dataset.getncattr('boss_param_perturbed_coal')
-            nc_dict['is_perturbed_sed'] = dataset.getncattr('boss_param_perturbed_sed')
+        # coords
+        if 'z' not in nc_dict: nc_dict['z'] = np.asarray(ds0['zh'][:]).copy()
+        if 'x' not in nc_dict: nc_dict['x'] = np.asarray(ds0['xh'][:]).copy()
+        if 'y' not in nc_dict: nc_dict['y'] = np.asarray(ds0['yh'][:]).copy()
+        
+        zf = np.asarray(ds0['zf'][:]).copy() * 1e3
 
+        # optional BOSS attrs
+        if 'BOSS' in mp:
+            nc_dict['n_param_nevp']    = ds0.getncattr('boss_n_param_nevp')
+            nc_dict['n_param_condevp'] = ds0.getncattr('boss_n_param_condevp')
+            nc_dict['n_param_coal']    = ds0.getncattr('boss_n_param_coal')
+            nc_dict['n_param_sed']     = ds0.getncattr('boss_n_param_sed')
+            if bool(ds0.getncattr('boss_is_ppe')):
+                nc_dict['is_perturbed_nevp']    = ds0.getncattr('boss_param_perturbed_nevp')
+                nc_dict['is_perturbed_condevp'] = ds0.getncattr('boss_param_perturbed_condevp')
+                nc_dict['is_perturbed_coal']    = ds0.getncattr('boss_param_perturbed_coal')
+                nc_dict['is_perturbed_sed']     = ds0.getncattr('boss_param_perturbed_sed')
+
+    # dt from time (guard single-file case)
+    t = nc_dict['time']
+    dt = float(t[1] - t[0]) if t.size >= 2 else np.nan
+
+    # assume constant density since it's not an output of the model currently
+    rho = 1.1 # kg/m^3
+    # variables of interest
     for var_name in var_interest:
-        if ippe == 0:
-            nc_dict[ic_str][mp].setdefault(var_name, {})
-            nc_dict[ic_str][mp][var_name]['value'] = var2phys(var_name, file_paths, dt)
-            nc_dict[ic_str][mp][var_name]['units'] = output_var_set[var_name]['var_unit']
+        dst = nc_dict[ic_str][mp] if ippe == 0 else nc_dict[ic_str][mp][ippe]
+        dst.setdefault(var_name, {})
+        dst[var_name]['value'] = var2phys(var_name, file_paths, dt, zf, rho)
+        dst[var_name]['units'] = output_var_set[var_name]['var_unit']
+
+
+def var2phys(var_name, file_paths, dt, zf, rho):
+    val_timeseries = []
+    dz = zf[1:] - zf[:-1]
+    z = (zf[1:] + zf[:-1])/2
+    # Handle ..._lastXXhrmean
+    is_lasthrmean = re.search(r'_last(\d+)hrmean', var_name)
+    if is_lasthrmean:
+        n_last_hr = int(is_lasthrmean.group(1)) + 1
+        n_needed  = int(np.ceil((n_last_hr * 3600) / dt)) if np.isfinite(dt) and dt > 0 else 1
+        for fp in file_paths[-n_needed:]:
+            with nc.Dataset(fp, 'r') as ds:
+                vname   = output_var_set[var_name]['var_source']
+                rawdata = ds.variables[vname][...]
+                if 'path' in var_name or 'prate' in var_name:
+                    dz_broadcast = dz[None, :, None, None]  # (1, z, 1, 1)
+                    rawdata = np.sum(rawdata * dz_broadcast * rho, axis=(0, 1))  # sum over z, shape (time, y, x)
+                elif 'per5lvl' in var_name:
+                    rawdata = np.mean(rawdata[:, ::5, :, :], axis=(0, 2, 3))
+
+                if 'scale' in output_var_set[var_name]:
+                    rawdata = rawdata * output_var_set[var_name]['scale']
+                val_timeseries.append(np.asarray(rawdata))
+        val_timeseries = np.stack(val_timeseries)
+        val_timeavg = np.mean(val_timeseries, axis=0)
+        if 'per5lvl' in var_name:
+            out = val_timeavg
         else:
-            nc_dict[ic_str][mp][ippe].setdefault(var_name, {})
-            nc_dict[ic_str][mp][ippe][var_name]['value'] = var2phys(var_name, file_paths, dt)
-            nc_dict[ic_str][mp][ippe][var_name]['units'] = output_var_set[var_name]['var_unit']
+            out = np.mean(val_timeavg)
+            
+        return out
 
-def var2phys(var_name, file_paths, dt):
-    var_data = []
-    if re.search(r'_last\d+hrmean', var_name):
-        n_last_hr = int(re.search(r'_last(\d+)hrmean', var_name).group(1)) + 1
-        fp_read = file_paths[-n_last_hr*int(3600/dt):]
-        for filepath in fp_read:
-            dataset = nc.Dataset(filepath)
-            rawdata = dataset.variables[output_var_set[var_name]['var_source']][:]
-            if 'scale' in output_var_set[var_name].keys():
-                rawdata *= output_var_set[var_name]['scale']
-            var_data.append(rawdata)
-        var_data = np.array(var_data)
-        var_data = np.mean(var_data[-n_last_hr*int(3600/dt):,...])
-    else:
-        for filepath in file_paths:
-            dataset = nc.Dataset(filepath)
-            rawdata = dataset.variables[output_var_set[var_name]['var_source']][:]
-            # if 'qc6' in output_var_set[var_name]['var_source']:
-            #     rawdata = rawdata*10**9.5
-            # if 'qc9' in output_var_set[var_name]['var_source']:
-            #     rawdata = rawdata*10**9.5
-            # 4d variable in [time, z, y, x]
-            if 'scale' in output_var_set[var_name].keys():
-                rawdata *= output_var_set[var_name]['scale']
+    # General case: iterate all files, always close the handle
+    for fp in file_paths:
+        with nc.Dataset(fp, 'r') as ds:
+            vname   = output_var_set[var_name]['var_source']
+            rawdata = ds.variables[vname][...]
+            if 'scale' in output_var_set[var_name]:
+                rawdata = rawdata * output_var_set[var_name]['scale']
             if '_path' in var_name:
-                var_data.append(np.sum(rawdata, axis=1))
+                dz_broadcast = dz[None, :, None, None]  # (1, z, 1, 1)
+                val_timeseries.append(np.sum(rawdata * dz_broadcast * rho, axis=1))
             elif '_dmprof' in var_name:
-                var_data.append(np.mean(rawdata, axis=(0,2,3)))
+                val_timeseries.append(np.mean(rawdata, axis=(0, 2, 3)))
             elif '_dmpath' in var_name:
-                var_data.append(np.mean(np.sum(rawdata, axis=(1)), axis=(1,2)))
+                dz_broadcast = dz[None, :, None, None]  # (1, z, 1, 1)
+                path = np.sum(rawdata * dz_broadcast * rho, axis=1)  # sum over z, shape (time, y, x)
+                val_timeseries.append(np.mean(path, axis=(1, 2)))  # mean over (y, x), shape (time,)
             elif '_curtain_mean' in var_name:
-                var_data.append(np.mean(rawdata, axis=(0,2)))
+                val_timeseries.append(np.mean(rawdata, axis=(0, 2)))
             elif '_curtain_slice' in var_name:
-                var_data.append(rawdata[0, :, 64, :])
+                # guard index 64
+                yidx = rawdata.shape[2] // 2
+                val_timeseries.append(rawdata[0, :, yidx, :])
             elif 'prate_dm' in var_name:
-                var_data.append(np.mean(rawdata))
+                val_timeseries.append(np.mean(rawdata))
             else:
-                var_data.append(rawdata[0, ...])
-        var_data = np.array(var_data)
+                val_timeseries.append(rawdata[0, ...])
 
+    arr = np.array(val_timeseries)  # ensure shapes are consistent across files
     if '_runmean' in var_name:
-        var_data = np.mean(var_data)
-
-    return var_data
+        arr = np.mean(arr)
+    return arr
 
 def last_number_key(s):
     matches = re.findall(r'(\d+)(?!.*\d)', s)

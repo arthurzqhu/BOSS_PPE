@@ -150,7 +150,7 @@ def gaussian_crps_loss_factory(n_obs, mask_min=-999.0, min_sigma=1e-6):
         rsca = y_pred[:, n_obs:]
         sigma = tf.nn.softplus(rsca) + tf.constant(min_sigma, tf.float32)
 
-        # Mask invalid/missing targets (your convention)
+        # Mask invalid/missing targets
         mask = tf.greater(y_true, tf.constant(mask_min, y_true.dtype))
         # If everything is masked for a batch item, avoid NaNs by giving zero weight
         mask_f = tf.cast(mask, tf.float32)
@@ -165,9 +165,9 @@ def gaussian_crps_loss_factory(n_obs, mask_min=-999.0, min_sigma=1e-6):
         crps = sigma * ( z * (2.0 * Phi - 1.0) + 2.0 * phi - inv_sqrt_pi )
 
         # Apply mask and average over observed entries then over batch
-        crps_sum   = tf.reduce_sum(crps * mask_f, axis=1)  # [B]
-        count_obs  = tf.reduce_sum(mask_f, axis=1) + 1e-9  # [B] avoid div-by-zero
-        crps_mean_per_item = crps_sum / count_obs          # [B]
+        crps_sum   = tf.reduce_sum(crps * mask_f, axis=1)
+        count_obs  = tf.reduce_sum(mask_f, axis=1) + 1e-9  # avoid div-by-zero
+        crps_mean_per_item = crps_sum / count_obs
         return tf.reduce_mean(crps_mean_per_item)          # scalar
 
     return loss

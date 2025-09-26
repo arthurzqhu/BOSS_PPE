@@ -8,7 +8,7 @@ import load_ppe_fun as lp
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from tqdm import tqdm
+# from tqdm import tqdm
 from time import sleep
 import matplotlib.colors as mcolors
 from matplotlib.colors import LogNorm
@@ -18,14 +18,22 @@ import re
 import pandas as pd
 import netCDF4 as nc
 
+import sys
+from tqdm.auto import tqdm
+
+# Disable the background monitor thread entirely
+tqdm.monitor_interval = 0  # <- important
+
+# Only show bars on a TTY (prevents odd behaviour in batch)
+tqdm_disable = not sys.stderr.isatty()
 
 def main():
     """Main function to process PPE data with memory efficiency"""
     # Configuration
     nikki = ''
     target_nikki = 'target'
-    sim_config = 'NCE_predNc_actwidth_r1_dfl0.3'
-    target_sim_config = 'NCE'
+    sim_config = 'fullmp_ppe_r1_sedflux'
+    target_sim_config = 'fullmp_with_sedflux'
     
     if not os.path.exists(lp.nc_dir):
         os.makedirs(lp.nc_dir)
@@ -37,7 +45,9 @@ def main():
     mconfigs = os.listdir(cl.output_dir + nikki)
     vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
     var_interest = []
-    var_interest += ['M0_last2hrmean', 'M3_last2hrmean', 'M4_last2hrmean', 'M6_last2hrmean'] # domain-mean path
+    # var_interest += ['M0_last2hrmean', 'M3_last2hrmean', 'M4_last2hrmean', 'M6_last2hrmean'] # domain-mean path
+    var_interest += ['M0_path_last2hrmean', 'M3_path_last2hrmean', 'M4_path_last2hrmean', 'M6_path_last2hrmean', 'prate_dm_last2hrmean'] # domain-mean path
+    var_interest += ['sfM0_per5lvl_last2hrmean', 'sfM3_per5lvl_last2hrmean', 'sfM4_per5lvl_last2hrmean', 'sfM6_per5lvl_last2hrmean'] # domain-mean fluxes
     print("Memory usage at start:")
     uf.detailed_memory_analysis()
     
@@ -72,7 +82,42 @@ def main():
     
     print("\nMemory usage after loading data:")
     uf.detailed_memory_analysis()
-    
+
+
+    plot_dir = f"plots/{nikki}/{sim_config}/"
+    if not os.path.exists(plot_dir):
+        os.makedirs(plot_dir)
+
+    fig, axs = plt.subplots(2, 3, figsize=(12, 8), sharex=True)
+    axs = axs.flatten()
+    na = []
+    for initcond_combo in itertools.product(*vars_strs):
+        ic_str = "".join(initcond_combo)
+        na.append(nc_dict[ic_str]['BIN-TAU']['na'])
+
+    na = np.array(na)
+
+    for ivar, var_name in enumerate(var_interest[:5]):
+        tgt_data = []
+        train_data = []
+        na_train = []
+        for initcond_combo in itertools.product(*vars_strs):
+            ic_str = "".join(initcond_combo)
+            tgt_data.append(nc_dict[ic_str]['BIN-TAU'][var_name]['value'])
+        for ippe in ppe_idx:
+            ippe = int(ippe)
+            train_data.append(nc_dict['cic']['SLC-BOSS'][ippe][var_name]['value'])
+            na_train.append(nc_dict['cic']['SLC-BOSS'][ippe]['na'])
+        tgt_data = np.array(tgt_data)
+        train_data = np.array(train_data)
+        na_train = np.array(na_train)
+        axs[ivar].plot(na, tgt_data, label=ic_str, linewidth=2, marker='o')
+        axs[ivar].scatter(na_train, train_data, label=ic_str, s=5, color='tab:orange', alpha=0.5)
+        axs[ivar].set_title(cl.output_var_set[var_name]['longname'])
+        axs[ivar].set_yscale('log')
+
+    plt.savefig(f"{plot_dir}{sim_config}_dm_path.png")
+
     ncase = 1
     ncase_respective = [len(i) for i in vars_strs]
     for i in ncase_respective:
@@ -110,6 +155,8 @@ def main():
         var_constraints.append(ivar)   
     global_attrs['var_constraints'] = np.array(var_constraints)
     global_attrs['init_var'] = np.array(vars_vn)
+    for var_vn in vars_vn:
+        global_attrs[var_vn + '_units'] = nc_dict[var_vn + '_units']
     global_attrs['n_init'] = n_init
     global_attrs['n_param_nevp'] = nc_dict['n_param_nevp']
     global_attrs['n_param_condevp'] = nc_dict['n_param_condevp']
@@ -190,19 +237,33 @@ def create_nc_variables_structure(nc_dict, vars_vn, var_interest):
     # Initialize summary variables
     for ivar in var_interest:
         var_units = cl.output_var_set[ivar]['var_unit']
-        
-        ncvars['ppe_' + ivar] = {
-            'dims': ('nppe',),
-            'units': var_units,
-            'data': None
-        }
-        
-        ncvars['tgt_' + ivar] = {
-            'dims': ('ncase',),
-            'units': var_units,
-            'data': None
-        }
-    
+
+        if 'per5lvl' in ivar:
+            ncvars['ppe_' + ivar] = {
+                'dims': ('nppe', 'nlevel'),
+                'units': var_units,
+                'data': None
+            }
+
+            ncvars['tgt_' + ivar] = {
+                'dims': ('ncase', 'nlevel'),
+                'units': var_units,
+                'data': None
+            }
+
+        else:
+            ncvars['ppe_' + ivar] = {
+                'dims': ('nppe',),
+                'units': var_units,
+                'data': None
+            }
+
+            ncvars['tgt_' + ivar] = {
+                'dims': ('ncase',),
+                'units': var_units,
+                'data': None
+            }
+
     # Initialize case variables
     for var_vn in vars_vn:
         ncvars['case_' + var_vn] = {
@@ -257,10 +318,16 @@ def process_target_data(nc_dict, vars_vn, vars_strs, var_interest, ncvars, dims,
     ncase = dims['ncase']
     
     for ivar in var_interest:
-        ncvars['tgt_' + ivar]['data'] = np.zeros(ncase)
+        if 'nlevel' in ncvars['tgt_' + ivar]['dims']:
+            if 'nlevel' not in dims:
+                dims['nlevel'] = nc_dict[ic_str][target_mp][ivar]['value'].shape[0]
+            ncvars['tgt_' + ivar]['data'] = np.zeros((ncase, dims['nlevel']))
+        else:
+            ncvars['tgt_' + ivar]['data'] = np.zeros(ncase)
         icase = 0
         for combo in itertools.product(*vars_strs):
             ic_str = "".join(combo)
+            # print(ivar, nc_dict[ic_str][target_mp][ivar]['value'])
             ncvars['tgt_' + ivar]['data'][icase] = nc_dict[ic_str][target_mp][ivar]['value']
             icase += 1
 
