@@ -228,6 +228,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
             mmscale.scale_ = 1/mmscale.data_range_
             scalers['y'].append(mmscale)
 
+    # print([i.shape for i in ppe_var_presence])
     # mom_consistency_mask = np.min(np.array(ppe_var_presence), axis=0)
     # scale_mask = np.max(mom_consistency_mask, axis=0)
 
@@ -429,11 +430,12 @@ def inverse_transform_data(y, transform_method, scaler, eff0=None):
     if 'asinh' in transform_method:
         if eff0 is None:
             raise ValueError('eff0 is required for asinh transformation')
-        return inv_smooth_linlog(scaler.inverse_transform(y), eff0)
+        y_with_possible_nan = inv_smooth_linlog(scaler.inverse_transform(y), eff0)
     elif 'log' in transform_method:
-        return scaler.inverse_transform(10**y)
+        y_with_possible_nan = scaler.inverse_transform(10**y)
     else:
-        return scaler.inverse_transform(y)
+        y_with_possible_nan = scaler.inverse_transform(y)        
+    return np.nan_to_num(y_with_possible_nan, nan=0, neginf=0, posinf=0)
 
 smooth_linlog = lambda y, eff0: eff0*np.arcsinh(y/eff0)
 inv_smooth_linlog = lambda y, eff0: eff0*np.sinh(y/eff0)

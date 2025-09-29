@@ -6,6 +6,7 @@ from glob import glob
 import platform
 import socket
 
+# should probably move these constants to a separate file
 # constants: {{{
 split_bins = [15, 14]
 col = np.log(2)/3.
@@ -23,10 +24,12 @@ elif 'Linux' in platform.platform():
         output_dir = '/data1/arthurhu/KiD_output/'
         nc_dir = '/home/arthurhu/BOSS_PPE/summary_ncs/'
         bossppe_dir = '/home/arthurhu/BOSS_PPE/'
+        param_dir = '/home/arthurhu/CloudBOSS/param_csv/'
     else:
         output_dir = '/pscratch/sd/a/arthurhu/KiD_output/'
         nc_dir = '/pscratch/sd/a/arthurhu/BOSS_PPE/summary_ncs/'
         bossppe_dir = '/pscratch/sd/a/arthurhu/BOSS_PPE/'
+        param_dir = '/global/homes/a/arthurhu/CloudBOSS/param_csv/'
 
 initvarSet = ['Na','w','dm','rh','sp','mc','cm','dmr','pmomx','pmomy','spc','spr',
    'pmomxy','dz','Na','spcr','sprc'];
@@ -387,7 +390,7 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
                                      (raw_data['cloud_M2'] + raw_data['rain_M2']))**(1./3.))
         case 'mean_M0_ss' | 'mean_M3_ss' | 'mean_Mx_ss' | 'mean_My_ss':
             data_timeseries = raw_data[var_name[0]] + raw_data[var_name[1]]
-            output_data = np.nanmean(data_timeseries[:,-60:]) # last 60 steps, or 5 mins
+            output_data = np.nanmean(data_timeseries[:,-180:]) # last 180 steps, or 15 mins
 
     # }}}
 
