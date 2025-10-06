@@ -277,12 +277,14 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
 
-    fig = plt.figure(figsize=(15,15/nvar))
-    gs = gridspec.GridSpec(1,nvar)
+    ncol_max = 6
+    ncol = min(ncol_max, nvar)
+    nrow = int(np.ceil(nvar/6))
+    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow/ncol*ncol_max), sharex=True)
+    axs = axs.flatten()
 
     for i, (yt_tmp, yp_tmp, yunc_tmp) in enumerate(zip(y_tgt, y_mdl, y_mdl_unc)):
-        ax = fig.add_subplot(gs[i])
-        ax.set_aspect('equal')
+        axs[i].set_aspect('equal')
 
         # vpoint = np.logical_and(np.isfinite(yt_tmp), np.isfinite(yp_tmp))
         vpoint = np.logical_and(yt_tmp>0, yp_tmp>0)
@@ -322,17 +324,17 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
         counts[:,:] = count_unc.reshape(mean_unc.shape)
 
         # Plot with pcolormesh (transpose so axes match)
-        pcm = ax.pcolormesh(
+        pcm = axs[i].pcolormesh(
             xbins, ybins, mean_unc.T, cmap='magma', shading='auto'
         )
-        plt.colorbar(pcm, ax=ax, label='Mean ln(uncertainty)')
-        ax.set_aspect('equal')
-        ax_min = max([ax.get_ylim()[0]] + [ax.get_xlim()[0]])
-        ax_max = min([ax.get_ylim()[1]] + [ax.get_xlim()[1]])
-        ax.plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
-        ax.set_title(var_constraints[i])
-        ax.set_xlabel('log10 BOSS output')
-        ax.set_ylabel('log10 emulator output')
+        plt.colorbar(pcm, ax=axs[i], label='Mean ln(uncertainty)')
+
+        ax_min = max([axs[i].get_ylim()[0]] + [axs[i].get_xlim()[0]])
+        ax_max = min([axs[i].get_ylim()[1]] + [axs[i].get_xlim()[1]])
+        axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
+        axs[i].set_title(var_constraints[i])
+        axs[i].set_xlabel('log10 BOSS output')
+        axs[i].set_ylabel('log10 emulator output')
 
     fig.tight_layout()
         
@@ -341,12 +343,15 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
 
-    fig = plt.figure(figsize=(15,15/nvar))
-    gs = gridspec.GridSpec(1,nvar)
-
+    ncol_max = 6
+    ncol = min(ncol_max, nvar)
+    nrow = int(np.ceil(nvar/6))
+    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow/ncol*ncol_max*2))
+    axs = axs.flatten()
+    
     for i, (yt_tmp, yp_tmp) in enumerate(zip(y_tgt, y_mdl)):
-        ax = fig.add_subplot(gs[i])
-        ax.set_aspect('equal')
+        # ax = fig.add_subplot(gs[i])
+        axs[i].set_aspect('equal')
 
         if title == 'Normalized':
             vpoint = np.logical_and(np.isfinite(yt_tmp), np.isfinite(yp_tmp))
@@ -359,17 +364,15 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
         hist_min = 1e-6
         hist = hist/hist.sum()
         hist = np.log10(np.maximum(hist, hist_min)).T
-        plt.pcolor(xedges, yedges, hist, cmap='viridis', shading='auto')
-        plt.colorbar()
+        pclr_hist = axs[i].pcolor(xedges, yedges, hist, cmap='viridis', shading='auto')
+        plt.colorbar(pclr_hist, ax=axs[i])
 
-        ax = plt.gca()
-        ax.set_aspect('equal')
-        ax_min = max([ax.get_ylim()[0]] + [ax.get_xlim()[0]])
-        ax_max = min([ax.get_ylim()[1]] + [ax.get_xlim()[1]])
-        plt.plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
-        plt.title(var_constraints[i])
-        ax.set_xlabel('log10 target output')
-        ax.set_ylabel('log10 emulator output')
+        ax_min = max([axs[i].get_ylim()[0]] + [axs[i].get_xlim()[0]])
+        ax_max = min([axs[i].get_ylim()[1]] + [axs[i].get_xlim()[1]])
+        axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
+        axs[i].set_title(var_constraints[i])
+        axs[i].set_xlabel('log10 target output')
+        axs[i].set_ylabel('log10 emulator output')
     
     fig.suptitle(title)
     fig.tight_layout()
