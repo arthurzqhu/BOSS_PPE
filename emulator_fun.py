@@ -64,7 +64,7 @@ def get_params(basepath, filename):
 
 def get_train_val_tgt_data(basepath, filename, param_train, transform_methods, 
                            l_multi_output=False, test_size=0.2, random_state=1,
-                           set_nan_to_neg1001=True):
+                           set_nan_to_neg1001=True, var_select=None):
     """
     Get the training, validation, and target data.
     Args:
@@ -99,7 +99,8 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
             set to True for multi-output model, False for CRPS
         test_size: size of the test set
         random_state: random seed
-        set_nan_to_neg1001: whether to set nan to -1001, 
+        set_nan_to_neg1001: whether to set nan to -1001 
+        var_select: select specific variables to use as constraint variables. If None, use all variables.
     Returns:
         x_train: training parameters 
             minmaxscaled
@@ -154,6 +155,16 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
 
     eff0s = getattr(dataset, 'thresholds_eff0')
     var_constraints = getattr(dataset, 'var_constraints')
+    if var_select is not None:
+        # check if all variables in var_select are in var_constraints
+        var_missing = [v for v in var_select if v not in var_constraints]
+        if var_missing:
+            raise KeyError(f"Missing keys in var_constraints: {var_missing}")
+        else:
+            # get the indices of var_constraints for each element of var_select
+            var_indices = [list(var_constraints).index(v) for v in var_select]
+            var_constraints = [var_constraints[i] for i in var_indices]
+            eff0s = [eff0s[i] for i in var_indices]
     nvar = len(var_constraints)
     ppe_var_names = ['ppe_' + i for i in var_constraints]
     ppe_raw_vals = [dataset.variables[i][:] for i in ppe_var_names]
@@ -183,6 +194,9 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
         if isinstance(transform_methods, str):
             transform_method = transform_methods
         else:
+            if len(transform_methods) != len(var_constraints):
+                raise ValueError(f"transform_methods ({len(transform_methods)}) must be a string \
+                    or a list of length same as var_constraints ({len(var_constraints)})")
             transform_method = transform_methods[ivar]
 
         if ppe_raw_vals[ivar].ndim >= 2:
@@ -244,10 +258,8 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
             tgt_data.append(dat)
             dat[np.isinf(dat)] = np.nan
 
-    for ivar, ppe_varr_tmp in enumerate(ppe_data):
+    for ivar, (ppe_varr_tmp, ppe_varp_tmp) in enumerate(zip(ppe_data, ppe_var_presence)):
         varcon = var_constraints[ivar]
-        # x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
-        #     mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
         x_train, x_val, y_train_rawv_single_tmp, y_val_rawv_single_tmp =\
             mod_sec.train_test_split(x_all, ppe_varr_tmp, test_size=test_size, random_state=random_state)
         if set_nan_to_neg1001:
@@ -257,9 +269,11 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
         y_val[varcon] = y_val_rawv_single_tmp
 
         if l_multi_output:
-            raise ValueError('multi-output model is not yet implemented')
-            # y_train[f'presence_{varcon}'] = y_train_wpresence_single
-            # y_val[f'presence_{varcon}'] = y_val_wpresence_single
+            # raise ValueError('multi-output model is not yet implemented')
+            x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
+                mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
+            y_train[f'presence_{varcon}'] = y_train_wpresence_single
+            y_val[f'presence_{varcon}'] = y_val_wpresence_single
     
     return x_train, x_val, y_train, y_val, tgt_data, tgt_initvar_matrix, ppe_info, scalers
 
@@ -271,7 +285,7 @@ def plot_emulator_results(x_val, y_val, model, ppe_info, transform_methods, scal
     plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized')
     plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values')
     if plot_uncertainty:
-        plot_2dhist_unc(y_tgt_inv, y_mdl_inv, y_mdl_unc, ppe_info)
+        plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info)
 
 def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
     nvar = ppe_info['nvar']
@@ -280,16 +294,16 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
     ncol_max = 6
     ncol = min(ncol_max, nvar)
     nrow = int(np.ceil(nvar/6))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow/ncol*ncol_max), sharex=True)
+    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2), sharex=True)
     axs = axs.flatten()
 
     for i, (yt_tmp, yp_tmp, yunc_tmp) in enumerate(zip(y_tgt, y_mdl, y_mdl_unc)):
         axs[i].set_aspect('equal')
 
-        # vpoint = np.logical_and(np.isfinite(yt_tmp), np.isfinite(yp_tmp))
-        vpoint = np.logical_and(yt_tmp>0, yp_tmp>0)
-        x_tmp = np.log10(yt_tmp[vpoint])
-        y_tmp = np.log10(yp_tmp[vpoint])
+        vpoint = np.logical_and(np.isfinite(yt_tmp), np.isfinite(yp_tmp))
+        # vpoint = np.logical_and(yt_tmp>0, yp_tmp>0)
+        x_tmp = yt_tmp[vpoint]
+        y_tmp = yp_tmp[vpoint]
         unc_tmp = yunc_tmp[vpoint]
         
         # Define bin edges
@@ -324,10 +338,8 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
         counts[:,:] = count_unc.reshape(mean_unc.shape)
 
         # Plot with pcolormesh (transpose so axes match)
-        pcm = axs[i].pcolormesh(
-            xbins, ybins, mean_unc.T, cmap='magma', shading='auto'
-        )
-        plt.colorbar(pcm, ax=axs[i], label='Mean ln(uncertainty)')
+        pcm = axs[i].pcolor(xbins, ybins, mean_unc.T, cmap='magma', shading='auto')
+        # plt.colorbar(pcm, ax=axs[i], label='Mean ln(uncertainty)')
 
         ax_min = max([axs[i].get_ylim()[0]] + [axs[i].get_xlim()[0]])
         ax_max = min([axs[i].get_ylim()[1]] + [axs[i].get_xlim()[1]])
@@ -346,7 +358,7 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
     ncol_max = 6
     ncol = min(ncol_max, nvar)
     nrow = int(np.ceil(nvar/6))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow/ncol*ncol_max*2))
+    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2))
     axs = axs.flatten()
     
     for i, (yt_tmp, yp_tmp) in enumerate(zip(y_tgt, y_mdl)):
@@ -365,7 +377,7 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
         hist = hist/hist.sum()
         hist = np.log10(np.maximum(hist, hist_min)).T
         pclr_hist = axs[i].pcolor(xedges, yedges, hist, cmap='viridis', shading='auto')
-        plt.colorbar(pclr_hist, ax=axs[i])
+        # plt.colorbar(pclr_hist, ax=axs[i])
 
         ax_min = max([axs[i].get_ylim()[0]] + [axs[i].get_xlim()[0]])
         ax_max = min([axs[i].get_ylim()[1]] + [axs[i].get_xlim()[1]])
@@ -394,6 +406,9 @@ def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
         if isinstance(transform_methods, str):
             transform_method = transform_methods
         else:
+            if len(transform_methods) != nvar:
+                raise ValueError(f"transform_methods ({len(transform_methods)}) must be a string \
+                    or a list of length same as var_constraints ({nvar})")
             transform_method = transform_methods[i]
 
         if type(model(x_val)) is dict:
@@ -404,7 +419,7 @@ def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
                 presence[presence>=0.5] = 1.
                 
             y_model_raw = model(x_val)[varcon][:,:nobs[i]].numpy().astype('float64')
-            y_model_unc = model(x_val)[varcon][:,nobs[i]:].numpy().astype('float64')
+            y_model_unc = tf.nn.softplus(model(x_val)[varcon][:,nobs[i]:]).numpy().astype('float64')
             if type(y_val) is dict:
                 y_val_raw = y_val[varcon][:,:nobs[i]].astype('float64')
             else:
