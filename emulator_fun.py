@@ -9,6 +9,9 @@ import sklearn.model_selection as mod_sec
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
+import random
+
+ncol_max = 4
 
 def get_param_interest_idx(dataset, return_perturbed_groupname=False):
     """
@@ -52,19 +55,23 @@ def get_params(basepath, filename):
     ppe_initcon_matrix = []
     
     for PPE_vn in PPE_vns:
-        ppe_initcon_matrix.append(np.expand_dims(dataset.variables[PPE_vn][:], axis=1))
+        if PPE_vn in dataset.variables:
+            ppe_initcon_matrix.append(np.expand_dims(dataset.variables[PPE_vn][:], axis=1))
     
     params_PPE = dataset.variables['params_PPE'][:][:, param_interest_idx]
     ppe_initcon_matrix.append(params_PPE)
     params_train = np.concatenate(ppe_initcon_matrix, axis=1)
 
-    return {'pnames': dataset.variables['param_names'][:],
+    pnames = dataset.variables['param_names'][:]
+    dataset.close()
+
+    return {'pnames': pnames,
             'vals': params_train,
             'param_interest_idx': param_interest_idx}
 
 def get_train_val_tgt_data(basepath, filename, param_train, transform_methods, 
                            l_multi_output=False, test_size=0.2, random_state=1,
-                           set_nan_to_neg1001=True, var_select=None):
+                           set_nan_to_neg1001=True, var_select=None, var_limit_zero=None):
     """
     Get the training, validation, and target data.
     Args:
@@ -134,15 +141,8 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
 
     scalers = {}
 
-    # always use minmaxscale for parameters to avoid extrapolation
-    minmaxscale = preprocessing.MinMaxScaler().fit(param_train['vals'])
-    x_all = minmaxscale.transform(param_train['vals'])
-    scalers['x'] = minmaxscale
-    scalers['y'] = []
-
     ppe_info = {}
     dataset = nc.Dataset(basepath + filename, mode='r')
-    ppe_info['nppe'], ppe_info['nparam_init'] = param_train['vals'].shape
     ppe_info['n_init'] = getattr(dataset, 'n_init')
     init_vars = getattr(dataset, 'init_var')
     if isinstance(init_vars, str):
@@ -151,9 +151,13 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
     tgt_initvar_matrix = []
 
     for init_var in init_vars:
-        tgt_initvar_matrix.append(np.expand_dims(dataset.variables['case_' + init_var][:], axis=1))
+        if 'case_' + init_var in dataset.variables:
+            tgt_initvar_matrix.append(np.expand_dims(dataset.variables['case_' + init_var][:], axis=1))
 
-    eff0s = getattr(dataset, 'thresholds_eff0')
+    if 'thresholds_eff0' in dataset.ncattrs():
+        eff0s = getattr(dataset, 'thresholds_eff0')
+    else:
+        eff0s = []
     var_constraints = getattr(dataset, 'var_constraints')
     if var_select is not None:
         # check if all variables in var_select are in var_constraints
@@ -170,11 +174,26 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
     ppe_raw_vals = [dataset.variables[i][:] for i in ppe_var_names]
     tgt_var_names = ['tgt_' + i for i in var_constraints]
     tgt_raw_vals = [dataset.variables[i][:] for i in tgt_var_names]
-    
+
+    if var_limit_zero is not None:
+        if not isinstance(var_limit_zero, str):
+            raise TypeError('optional `var_limit_zero` needs to be a string')
+
+        idx = filter_zeros_and_get_indices(ppe_raw_vals[var_constraints.index(var_limit_zero)], throw_away_ratio=0.9)
+        ppe_vals_temp = ppe_raw_vals.copy()
+        ppe_raw_vals = [i[idx] for i in ppe_vals_temp]
+        param_train['vals'] = param_train['vals'][idx,:]
+
+    # always use minmaxscale for parameters to avoid extrapolation
+    minmaxscale = preprocessing.MinMaxScaler().fit(param_train['vals'])
+    x_all = minmaxscale.transform(param_train['vals'])
+    scalers['x'] = minmaxscale
+    scalers['y'] = []
 
     y_train = {}
     y_val = {}
 
+    ppe_info['nppe'], ppe_info['nparam_init'] = param_train['vals'].shape
     ppe_info['nobs'] = [int(np.prod(i.shape[1:])) for i in ppe_raw_vals]
     ppe_info['ncases'] = tgt_raw_vals[0].shape[0]
     ppe_info['nvar'] = nvar
@@ -269,31 +288,53 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
         y_val[varcon] = y_val_rawv_single_tmp
 
         if l_multi_output:
-            # raise ValueError('multi-output model is not yet implemented')
             x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
                 mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
             y_train[f'presence_{varcon}'] = y_train_wpresence_single
             y_val[f'presence_{varcon}'] = y_val_wpresence_single
     
+    dataset.close()
     return x_train, x_val, y_train, y_val, tgt_data, tgt_initvar_matrix, ppe_info, scalers
 
 def plot_emulator_results(x_val, y_val, model, ppe_info, transform_methods, scalers,
-                          plot_uncertainty=False):
+                          l_plot_uncertainty=False, l_plot_log=True, l_plot_scatter=False):
 
     y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc = apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers)
     
-    plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized')
-    plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values')
-    if plot_uncertainty:
+    plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log)
+    plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log)
+    if l_plot_uncertainty:
         plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info)
+
+def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log):
+    nvar = ppe_info['nvar']
+    var_constraints = ppe_info['var_constraints']
+    
+    ncol = min(ncol_max, nvar)
+    nrow = int(np.ceil(nvar/ncol_max))
+    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2))
+    axs = axs.flatten()
+    
+    for i, (yt_tmp, yp_tmp) in enumerate(zip(y_tgt, y_mdl)):
+        # axs[i].set_aspect('equal')
+        axs[i].scatter(yt_tmp, yp_tmp, alpha=0.1)
+        axs[i].set_title(var_constraints[i])
+        axs[i].set_xlabel('target output')
+        axs[i].set_ylabel('emulator output')
+        ax_min = max([axs[i].get_ylim()[0]] + [axs[i].get_xlim()[0]])
+        ax_max = min([axs[i].get_ylim()[1]] + [axs[i].get_xlim()[1]])
+        axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
+    
+    fig.suptitle(title)
+    fig.tight_layout() 
+    
 
 def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
 
-    ncol_max = 6
     ncol = min(ncol_max, nvar)
-    nrow = int(np.ceil(nvar/6))
+    nrow = int(np.ceil(nvar/ncol_max))
     fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2), sharex=True)
     axs = axs.flatten()
 
@@ -351,13 +392,12 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
     fig.tight_layout()
         
 
-def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
+def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
 
-    ncol_max = 6
     ncol = min(ncol_max, nvar)
-    nrow = int(np.ceil(nvar/6))
+    nrow = int(np.ceil(nvar/ncol_max))
     fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2))
     axs = axs.flatten()
     
@@ -371,11 +411,17 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
         elif title == 'Raw values':
             vpoint = np.logical_and(yt_tmp>0, yp_tmp>0)
             # vpoint = np.logical_and(np.isfinite(yt_tmp), np.isfinite(yp_tmp))
-            hist, xedges, yedges = np.histogram2d(np.log10(yt_tmp[vpoint]), np.log10(yp_tmp[vpoint]), bins=[50, 60])
+            if l_plot_log:
+                hist, xedges, yedges = np.histogram2d(np.log10(yt_tmp[vpoint]), np.log10(yp_tmp[vpoint]), bins=[50, 60])
+            else:
+                hist, xedges, yedges = np.histogram2d(yt_tmp[vpoint], yp_tmp[vpoint], bins=[50, 60])
 
         hist_min = 1e-6
         hist = hist/hist.sum()
-        hist = np.log10(np.maximum(hist, hist_min)).T
+        if l_plot_log:
+            hist = np.log10(np.maximum(hist, hist_min)).T
+        else:
+            hist = np.maximum(hist, hist_min).T
         pclr_hist = axs[i].pcolor(xedges, yedges, hist, cmap='viridis', shading='auto')
         # plt.colorbar(pclr_hist, ax=axs[i])
 
@@ -383,15 +429,18 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title):
         ax_max = min([axs[i].get_ylim()[1]] + [axs[i].get_xlim()[1]])
         axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
         axs[i].set_title(var_constraints[i])
-        axs[i].set_xlabel('log10 target output')
-        axs[i].set_ylabel('log10 emulator output')
+        if l_plot_log:
+            axs[i].set_xlabel('log10 target output')
+            axs[i].set_ylabel('log10 emulator output')
+        else:
+            axs[i].set_xlabel('target output')
+            axs[i].set_ylabel('emulator output')
     
     fig.suptitle(title)
     fig.tight_layout()
 
 def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
     eff0s = ppe_info['eff0s']
-    nvar = ppe_info['nvar']
     nobs = ppe_info['nobs']
     varcons = ppe_info['var_constraints']
 
@@ -444,6 +493,27 @@ def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
     
     return y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc
 
+def filter_zeros_and_get_indices(input_list, seed=None, throw_away_ratio=3/4):
+    if seed:
+        random.seed(seed)
+
+    nppe = len(input_list)
+    max_zeros_to_remove = int(nppe * throw_away_ratio)
+
+    # Get the indices of non-zeros and zeros
+    non_zero_indices = [i for i, x in enumerate(input_list) if x != 0]
+    zero_indices = [i for i, x in enumerate(input_list) if x == 0]
+
+    # Determine how many zeros to keep and randomly sample their indices
+    zeros_to_remove = min(int(len(zero_indices)*throw_away_ratio), max_zeros_to_remove)
+    zeros_to_keep_count = len(zero_indices) - zeros_to_remove
+    kept_zero_indices = random.sample(zero_indices, zeros_to_keep_count)
+
+    # Combine the indices of non-zeros and kept zeros
+    combined_indices = non_zero_indices + kept_zero_indices
+
+    return sorted(combined_indices)
+
 def inverse_transform_data(y, transform_method, scaler, eff0=None):
     if 'asinh' in transform_method:
         if eff0 is None:
@@ -458,4 +528,3 @@ def inverse_transform_data(y, transform_method, scaler, eff0=None):
 smooth_linlog = lambda y, eff0: eff0*np.arcsinh(y/eff0)
 inv_smooth_linlog = lambda y, eff0: eff0*np.sinh(y/eff0)
 boxcox = lambda y, lam: (y**lam - 1)/lam if lam != 0 else np.log(y)
-inv_boxcox = lambda y, lam: (y*lam+1)**(1/lam)
