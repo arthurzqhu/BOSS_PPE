@@ -12,8 +12,8 @@ import util_fun as uf
 
 nikki = ''
 target_nikki = 'target'
-sim_config = 'nosed_ppe_r0_coal'
-target_sim_config = 'nosed'
+sim_config = 'fullmp_ppe_KiD_log_r1_pymc'
+target_sim_config = 'fullmp_tgt_loginit'
 
 plot_dir = f"plots/{nikki}/{sim_config}/"
 if not os.path.exists(plot_dir):
@@ -25,9 +25,14 @@ train_mp = 'SLC-BOSS'
 mconfigs = os.listdir(cl.output_dir + nikki)
 vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
 var_interest = []
-var_interest += ['M0_last2hrmean', 'M3_last2hrmean', 'M4_last2hrmean', 'M6_last2hrmean'] # domain-mean path
-# var_interest += ['M0_last2hrmean', 'M3_last2hrmean', 'M4_last2hrmean', 'M6_last2hrmean', 'prate_dm_last2hrmean'] # domain-mean path
+# var_interest += ['M0_path_last2hrmean', 'M3_path_last2hrmean', 'M4_path_last2hrmean', 'M6_path_last2hrmean'] # domain-mean path
+var_interest += ['M0_path_last2hrmean', 'M3_path_last2hrmean', 'M4_path_last2hrmean', 'M6_path_last2hrmean', 'prate_dm_last2hrmean', 'prate_dm_last2hrstd', 'precip_onset', 'precip_max_dm'] # domain-mean path
 # var_interest += ['sfM0_last2hrmean', 'sfM3_last2hrmean', 'sfM4_last2hrmean', 'sfM6_last2hrmean'] # domain-mean fluxes
+var_interest += ['sfM0_10m_last2hrmean', 'sfM3_10m_last2hrmean', 'sfM4_10m_last2hrmean', 'sfM6_10m_last2hrmean',
+                 'sfM0_250m_last2hrmean', 'sfM3_250m_last2hrmean', 'sfM4_250m_last2hrmean', 'sfM6_250m_last2hrmean',
+                 'sfM0_500m_last2hrmean', 'sfM3_500m_last2hrmean', 'sfM4_500m_last2hrmean', 'sfM6_500m_last2hrmean',
+                 # 'sfM0_750m_last2hrmean', 'sfM3_750m_last2hrmean', 'sfM4_750m_last2hrmean', 'sfM6_750m_last2hrmean',
+                 ]
 # var_interest += ['M0_curtain_mean', 'M3_curtain_mean', 'M4_curtain_mean', 'M6_curtain_mean'] # curtain
 # var_interest += ['w', 'w_dmprof', 'w_curtain_slice', 'w_curtain_mean'] # 4D var
 # var_interest += ['u_dmprof', 'v_dmprof', 'w_dmprof']
@@ -54,13 +59,11 @@ file_info.update({'sim_config': sim_config,
                     'mp_config': train_mp})
 ppe_idx = cl.get_ppe_idx(file_info)
 ppe_idx = [int(i) for i in ppe_idx]
-ppe_idx = ppe_idx
+ppe_idx = ppe_idx[:1400]
 for ippe in tqdm(ppe_idx, desc='loading BOSS data'):
     cl.load_cm1(file_info, var_interest, nc_dict, True, ippe=ippe)
 
-uf.detailed_memory_analysis()
-
-fig, axs = plt.subplots(2, 2, figsize=(12, 12), sharex=True)
+fig, axs = plt.subplots(5, 4, figsize=(12, 15), sharex=True)
 axs = axs.flatten()
 na = []
 for initcond_combo in itertools.product(*vars_strs):
@@ -86,6 +89,7 @@ for ivar, var_name in enumerate(var_interest):
     axs[ivar].plot(na, tgt_data, label=ic_str, linewidth=2, marker='o')
     axs[ivar].scatter(na_train, train_data, label=ic_str, s=5, color='tab:orange', alpha=0.5)
     axs[ivar].set_title(cl.output_var_set[var_name]['longname'])
+    axs[ivar].set_xscale('log')
     axs[ivar].set_yscale('log')
 
 plt.savefig(f"{plot_dir}{sim_config}_dm_path.png")

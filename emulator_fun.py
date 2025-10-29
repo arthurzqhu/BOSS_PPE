@@ -71,7 +71,8 @@ def get_params(basepath, filename):
 
 def get_train_val_tgt_data(basepath, filename, param_train, transform_methods, 
                            l_multi_output=False, test_size=0.2, random_state=1,
-                           set_nan_to_neg1001=True, var_select=None, var_limit_zero=None):
+                           set_nan_to_neg1001=True, var_select=None, var_limit_zero=None,
+                           throw_away_ratio=0.):
     """
     Get the training, validation, and target data.
     Args:
@@ -103,11 +104,13 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
             'minmaxscale_asinh': minmax scaler with asinh transformation
             'minmaxscale': minmax scaler
         l_multi_output: whether to use multi-output model: presence of water (boolean) and amount of water (float)
-            set to True for multi-output model, False for CRPS
-        test_size: size of the test set
-        random_state: random seed
-        set_nan_to_neg1001: whether to set nan to -1001 
-        var_select: select specific variables to use as constraint variables. If None, use all variables.
+            set to True for multi-output model, False for CRPS (default: False)
+        test_size: size of the test set (default: 0.2). If 0, use all data for training.
+        random_state: random seed (default: 1)
+        set_nan_to_neg1001: whether to set nan to -1001 (default: True)
+        var_select: select specific variables to use as constraint variables. If None, use all variables. (default: None)
+        var_limit_zero: choose one variable to limit the data to be greater than zero. (default: None)
+        throw_away_ratio: ratio of data to throw away. If 0, use all data. (default: 0)
     Returns:
         x_train: training parameters 
             minmaxscaled
@@ -158,6 +161,8 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
         eff0s = getattr(dataset, 'thresholds_eff0')
     else:
         eff0s = []
+    eff0s[4] = 1e-8
+    eff0s[5] = 1e-8
     var_constraints = getattr(dataset, 'var_constraints')
     if var_select is not None:
         # check if all variables in var_select are in var_constraints
@@ -179,7 +184,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
         if not isinstance(var_limit_zero, str):
             raise TypeError('optional `var_limit_zero` needs to be a string')
 
-        idx = filter_zeros_and_get_indices(ppe_raw_vals[var_constraints.index(var_limit_zero)], throw_away_ratio=0.9)
+        idx = filter_zeros_and_get_indices(ppe_raw_vals[var_constraints.index(var_limit_zero)], throw_away_ratio, seed=random_state)
         ppe_vals_temp = ppe_raw_vals.copy()
         ppe_raw_vals = [i[idx] for i in ppe_vals_temp]
         param_train['vals'] = param_train['vals'][idx,:]
@@ -192,6 +197,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
 
     y_train = {}
     y_val = {}
+
 
     ppe_info['nppe'], ppe_info['nparam_init'] = param_train['vals'].shape
     ppe_info['nobs'] = [int(np.prod(i.shape[1:])) for i in ppe_raw_vals]
@@ -207,9 +213,15 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
     tgt_norm = []
     ppe_data = []
     tgt_data = []
+    tgt_unc = []
 
-    for ivar, varcon in enumerate(tqdm(var_constraints, desc='Transforming data...')):
-        eff0 = eff0s[ivar]
+    for ivar, (varcon, eff0) in enumerate(tqdm(zip(var_constraints, eff0s), desc='Transforming data...')):
+        # get obs uncertainty
+        # print(dataset.variables[f'tgt_unc_{varcon}'][:])
+        if f'tgt_unc_{varcon}' in dataset.variables:
+            tgt_unc.append(dataset.variables[f'tgt_unc_{varcon}'][:])
+
+        # get transform method
         if isinstance(transform_methods, str):
             transform_method = transform_methods
         else:
@@ -218,12 +230,10 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
                     or a list of length same as var_constraints ({len(var_constraints)})")
             transform_method = transform_methods[ivar]
 
+        # reshape data
         if ppe_raw_vals[ivar].ndim >= 2:
             ppe_raw_val_reshaped = np.reshape(ppe_raw_vals[ivar], (ppe_info['nppe'], np.prod(ppe_raw_vals[ivar].shape[1:])))
             tgt_raw_val_reshaped = np.reshape(tgt_raw_vals[ivar], (ppe_info['ncases'], np.prod(tgt_raw_vals[ivar].shape[1:])))
-            # WARNING: temporary limiter
-            # ppe_raw_val_reshaped[ppe_raw_val_reshaped<0] = 0.
-            # tgt_raw_val_reshaped[tgt_raw_val_reshaped<0] = 0.
         else:
             ppe_raw_val_reshaped = ppe_raw_vals[ivar].reshape(-1, 1)
             tgt_raw_val_reshaped = tgt_raw_vals[ivar].reshape(-1, 1)
@@ -279,8 +289,15 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
 
     for ivar, (ppe_varr_tmp, ppe_varp_tmp) in enumerate(zip(ppe_data, ppe_var_presence)):
         varcon = var_constraints[ivar]
-        x_train, x_val, y_train_rawv_single_tmp, y_val_rawv_single_tmp =\
-            mod_sec.train_test_split(x_all, ppe_varr_tmp, test_size=test_size, random_state=random_state)
+        if test_size > 0:
+            x_train, x_val, y_train_rawv_single_tmp, y_val_rawv_single_tmp =\
+                mod_sec.train_test_split(x_all, ppe_varr_tmp, test_size=test_size, random_state=random_state)
+            # print(np.where(np.isin(x_train, x_all))[0])
+        else:
+            x_train = x_all
+            x_val = None
+            y_train_rawv_single_tmp = ppe_varr_tmp
+            y_val_rawv_single_tmp = None
         if set_nan_to_neg1001:
             y_train_rawv_single_tmp = np.nan_to_num(y_train_rawv_single_tmp, nan=-1001, neginf=-1001, posinf=-1001)
             y_val_rawv_single_tmp = np.nan_to_num(y_val_rawv_single_tmp, nan=-1001, neginf=-1001, posinf=-1001)
@@ -288,21 +305,31 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
         y_val[varcon] = y_val_rawv_single_tmp
 
         if l_multi_output:
-            x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
-                mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
+            if test_size > 0:
+                x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
+                    mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
+            else:
+                x_train = x_all
+                x_val = None
+                y_train_wpresence_single = ppe_varp_tmp
+                y_val_wpresence_single = None
             y_train[f'presence_{varcon}'] = y_train_wpresence_single
             y_val[f'presence_{varcon}'] = y_val_wpresence_single
     
     dataset.close()
-    return x_train, x_val, y_train, y_val, tgt_data, tgt_initvar_matrix, ppe_info, scalers
+    return x_train, x_val, y_train, y_val, tgt_data, tgt_unc, tgt_initvar_matrix, ppe_info, scalers
 
 def plot_emulator_results(x_val, y_val, model, ppe_info, transform_methods, scalers,
                           l_plot_uncertainty=False, l_plot_log=True, l_plot_scatter=False):
 
     y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc = apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers)
-    
-    plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log)
-    plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log)
+
+    if l_plot_scatter:
+        plot_scatter(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log)
+        plot_scatter(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log)
+    else:
+        plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log)
+        plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log)
     if l_plot_uncertainty:
         plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info)
 
@@ -316,11 +343,17 @@ def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log):
     axs = axs.flatten()
     
     for i, (yt_tmp, yp_tmp) in enumerate(zip(y_tgt, y_mdl)):
-        # axs[i].set_aspect('equal')
+        axs[i].set_aspect('equal')
         axs[i].scatter(yt_tmp, yp_tmp, alpha=0.1)
         axs[i].set_title(var_constraints[i])
-        axs[i].set_xlabel('target output')
-        axs[i].set_ylabel('emulator output')
+        if title == 'Raw values' and l_plot_log:
+            axs[i].set_xlabel('log10 target output')
+            axs[i].set_ylabel('log10 emulator output')
+            axs[i].set_xscale('log')
+            axs[i].set_yscale('log')
+        else:
+            axs[i].set_xlabel('target output')
+            axs[i].set_ylabel('emulator output')
         ax_min = max([axs[i].get_ylim()[0]] + [axs[i].get_xlim()[0]])
         ax_max = min([axs[i].get_ylim()[1]] + [axs[i].get_xlim()[1]])
         axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
@@ -441,6 +474,7 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log):
 
 def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
     eff0s = ppe_info['eff0s']
+    nvar = ppe_info['nvar']
     nobs = ppe_info['nobs']
     varcons = ppe_info['var_constraints']
 
@@ -493,7 +527,7 @@ def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
     
     return y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc
 
-def filter_zeros_and_get_indices(input_list, seed=None, throw_away_ratio=3/4):
+def filter_zeros_and_get_indices(input_list, throw_away_ratio, seed=None):
     if seed:
         random.seed(seed)
 
@@ -524,6 +558,32 @@ def inverse_transform_data(y, transform_method, scaler, eff0=None):
     else:
         y_with_possible_nan = scaler.inverse_transform(y)        
     return np.nan_to_num(y_with_possible_nan, nan=0, neginf=0, posinf=0)
+
+def make_weights_dict(y_dict,
+                      rr_key,                 # the output name for rain rate in y_* dicts
+                      rr_threshold_raw,       # raw-unit threshold you use to define "no rain"
+                      asinh_scale, t_mean, t_std,  # transform params used to make y_dict
+                      w_zero=0.2, w_pos=1.0,
+                      smooth_alpha=0.0):
+    """
+    Build per-output weight arrays matching shapes of y_dict[output].
+    All outputs get ones except rr_key, which is down-weighted for 'no-rain'.
+    y_dict values are already TRANSFORMED (asinh -> standardize).
+    """
+    # transformed threshold t0 for the raw threshold
+    t0 = (np.arcsinh(rr_threshold_raw / asinh_scale) - t_mean) / (t_std)
+
+    sw = {}
+    for k, y in y_dict.items():
+        w = np.ones_like(y, dtype=np.float32)
+        if k == rr_key:
+            if smooth_alpha and smooth_alpha > 0.0:
+                ramp = 1.0 / (1.0 + np.exp(-smooth_alpha * (y - t0)))
+                w = w_zero + (w_pos - w_zero) * ramp
+            else:
+                w = np.where(y <= t0, w_zero, w_pos).astype(np.float32)
+        sw[k] = w
+    return sw
 
 smooth_linlog = lambda y, eff0: eff0*np.arcsinh(y/eff0)
 inv_smooth_linlog = lambda y, eff0: eff0*np.sinh(y/eff0)

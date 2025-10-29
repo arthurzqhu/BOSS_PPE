@@ -32,8 +32,10 @@ def main():
     # Configuration
     nikki = ''
     target_nikki = 'target'
-    sim_config = 'fullmp_ppe_r1_sedflux'
-    target_sim_config = 'fullmp_with_sedflux'
+    sim_config = 'nosed_best_lhs'
+    target_sim_config = 'nosed_tgt_loginit_fixcoal'
+    # sim_config = 'fullmp_ppe_KiD_log_r1_custom_lhs'
+    # target_sim_config = 'fullmp_tgt_loginit_fixcoal'
     
     if not os.path.exists(lp.nc_dir):
         os.makedirs(lp.nc_dir)
@@ -45,9 +47,19 @@ def main():
     mconfigs = os.listdir(cl.output_dir + nikki)
     vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
     var_interest = []
-    # var_interest += ['M0_last2hrmean', 'M3_last2hrmean', 'M4_last2hrmean', 'M6_last2hrmean'] # domain-mean path
-    var_interest += ['M0_path_last2hrmean', 'M3_path_last2hrmean', 'M4_path_last2hrmean', 'M6_path_last2hrmean', 'prate_dm_last2hrmean'] # domain-mean path
-    var_interest += ['sfM0_per5lvl_last2hrmean', 'sfM3_per5lvl_last2hrmean', 'sfM4_per5lvl_last2hrmean', 'sfM6_per5lvl_last2hrmean'] # domain-mean fluxes
+    var_interest += [
+            'M0_path_last2hrmean', 'M3_path_last2hrmean', 'M4_path_last2hrmean', 'M6_path_last2hrmean', 
+            'M0_10m_last2hrmean', 'M3_10m_last2hrmean', 'M4_10m_last2hrmean', 'M6_10m_last2hrmean', 
+            'M0_250m_last2hrmean', 'M3_250m_last2hrmean', 'M4_250m_last2hrmean', 'M6_250m_last2hrmean', 
+                     # 'prate_dm_last2hrmean', 'prate_dm_last2hrstd'
+                     ] # domain-mean path
+    # var_interest += ['M0_path_last2hrmean', 'M3_path_last2hrmean', 'M4_path_last2hrmean', 'M6_path_last2hrmean',] # domain-mean path
+    # var_interest += ['M0_per5lvl_last2hrmean', 'M3_per5lvl_last2hrmean', 'M4_per5lvl_last2hrmean', 'M6_per5lvl_last2hrmean']
+    # var_interest += ['sfM0_per5lvl_last2hrmean', 'sfM3_per5lvl_last2hrmean', 'sfM4_per5lvl_last2hrmean', 'sfM6_per5lvl_last2hrmean'] # domain-mean fluxes
+    # var_interest += ['sfM0_10m_last2hrmean', 'sfM3_10m_last2hrmean', 'sfM4_10m_last2hrmean', 'sfM6_10m_last2hrmean',
+    #              'sfM0_250m_last2hrmean', 'sfM3_250m_last2hrmean', 'sfM4_250m_last2hrmean', 'sfM6_250m_last2hrmean',
+    #              'sfM0_500m_last2hrmean', 'sfM3_500m_last2hrmean', 'sfM4_500m_last2hrmean', 'sfM6_500m_last2hrmean',
+    #                  ]
     print("Memory usage at start:")
     uf.detailed_memory_analysis()
     
@@ -67,6 +79,9 @@ def main():
                     'mp_config': train_mp})
     ppe_idx = cl.get_ppe_idx(file_info)
     ppe_idx = [int(i) for i in ppe_idx]
+
+    nc_filename = f"{lp.nc_dir}{sim_config}_momval_pratespec_sf3layers_N{len(ppe_idx)}.nc"
+
     for ippe in tqdm(ppe_idx, desc='loading BOSS data'):
         cl.load_cm1(file_info, var_interest, nc_dict, True, ippe=ippe)
 
@@ -84,39 +99,39 @@ def main():
     uf.detailed_memory_analysis()
 
 
-    plot_dir = f"plots/{nikki}/{sim_config}/"
-    if not os.path.exists(plot_dir):
-        os.makedirs(plot_dir)
+#     plot_dir = f"plots/{nikki}/{sim_config}/"
+#     if not os.path.exists(plot_dir):
+#         os.makedirs(plot_dir)
 
-    fig, axs = plt.subplots(2, 3, figsize=(12, 8), sharex=True)
-    axs = axs.flatten()
-    na = []
-    for initcond_combo in itertools.product(*vars_strs):
-        ic_str = "".join(initcond_combo)
-        na.append(nc_dict[ic_str]['BIN-TAU']['na'])
+#     fig, axs = plt.subplots(2, 3, figsize=(12, 8), sharex=True)
+#     axs = axs.flatten()
+#     na = []
+#     for initcond_combo in itertools.product(*vars_strs):
+#         ic_str = "".join(initcond_combo)
+#         na.append(nc_dict[ic_str]['BIN-TAU']['na'])
 
-    na = np.array(na)
+#     na = np.array(na)
 
-    for ivar, var_name in enumerate(var_interest[:5]):
-        tgt_data = []
-        train_data = []
-        na_train = []
-        for initcond_combo in itertools.product(*vars_strs):
-            ic_str = "".join(initcond_combo)
-            tgt_data.append(nc_dict[ic_str]['BIN-TAU'][var_name]['value'])
-        for ippe in ppe_idx:
-            ippe = int(ippe)
-            train_data.append(nc_dict['cic']['SLC-BOSS'][ippe][var_name]['value'])
-            na_train.append(nc_dict['cic']['SLC-BOSS'][ippe]['na'])
-        tgt_data = np.array(tgt_data)
-        train_data = np.array(train_data)
-        na_train = np.array(na_train)
-        axs[ivar].plot(na, tgt_data, label=ic_str, linewidth=2, marker='o')
-        axs[ivar].scatter(na_train, train_data, label=ic_str, s=5, color='tab:orange', alpha=0.5)
-        axs[ivar].set_title(cl.output_var_set[var_name]['longname'])
-        axs[ivar].set_yscale('log')
+#     for ivar, var_name in enumerate(var_interest[:5]):
+#         tgt_data = []
+#         train_data = []
+#         na_train = []
+#         for initcond_combo in itertools.product(*vars_strs):
+#             ic_str = "".join(initcond_combo)
+#             tgt_data.append(nc_dict[ic_str]['BIN-TAU'][var_name]['value'])
+#         for ippe in ppe_idx:
+#             ippe = int(ippe)
+#             train_data.append(nc_dict['cic']['SLC-BOSS'][ippe][var_name]['value'])
+#             na_train.append(nc_dict['cic']['SLC-BOSS'][ippe]['na'])
+#         tgt_data = np.array(tgt_data)
+#         train_data = np.array(train_data)
+#         na_train = np.array(na_train)
+#         axs[ivar].plot(na, tgt_data, label=ic_str, linewidth=2, marker='o')
+#         axs[ivar].scatter(na_train, train_data, label=ic_str, s=5, color='tab:orange', alpha=0.5)
+#         axs[ivar].set_title(cl.output_var_set[var_name]['longname'])
+#         axs[ivar].set_yscale('log')
 
-    plt.savefig(f"{plot_dir}{sim_config}_dm_path.png")
+#     plt.savefig(f"{plot_dir}{sim_config}_dm_path.png")
 
     ncase = 1
     ncase_respective = [len(i) for i in vars_strs]
@@ -172,8 +187,10 @@ def main():
         value_greater_0 = ncvars['ppe_' + ivar]['data'][ncvars['ppe_' + ivar]['data'] > 0]
         if 'V_M' in ivar:
             global_attrs['thresholds_eff0'].append(0.1)
+        # elif 'prate' in ivar:
+        #     global_attrs['thresholds_eff0'].append(1e-4)
         else:
-            global_attrs['thresholds_eff0'].append(np.nanpercentile(value_greater_0, 1))
+            global_attrs['thresholds_eff0'].append(np.nanpercentile(value_greater_0, 10))
     
     print("Thresholds:", global_attrs['thresholds_eff0'])
     
@@ -181,36 +198,35 @@ def main():
     print("\nWriting netCDF file...")
 
     # Check if file exists and handle overwrite
-    nc_filename = f"{lp.nc_dir}{sim_config}_last2hrmean_N{len(ppe_idx)}.nc"
     if os.path.exists(nc_filename):
         print(f"\nFile '{nc_filename}' already exists.")
-        user_choice = input("Do you want to replace it (r) or keep both (k)? [r/k]: ").strip().lower()
-        if user_choice == 'k':
-            base, ext = os.path.splitext(nc_filename)
-            suffix = 1
+        # user_choice = input("Do you want to replace it (r) or keep both (k)? [r/k]: ").strip().lower()
+        # if user_choice == 'k':
+        base, ext = os.path.splitext(nc_filename)
+        suffix = 1
+        new_filename = f"{base}_copy{suffix}{ext}"
+        while os.path.exists(new_filename):
+            suffix += 1
             new_filename = f"{base}_copy{suffix}{ext}"
-            while os.path.exists(new_filename):
-                suffix += 1
-                new_filename = f"{base}_copy{suffix}{ext}"
-            nc_filename = new_filename
-            print(f"Saving as '{nc_filename}' instead.")
-        elif user_choice == 'r':
-            try:
-                os.remove(nc_filename)
-                print(f"Removed existing file '{nc_filename}'.")
-            except Exception as e:
-                print(f"Could not remove file '{nc_filename}': {e}")
-                print("Exiting without saving.")
-                try:
-                    nc_file.close()
-                except Exception:
-                    pass
-        else:
-            print("Invalid input. Exiting without saving.")
-            try:
-                nc_file.close()
-            except Exception:
-                pass
+        nc_filename = new_filename
+        print(f"Saving as '{nc_filename}' instead.")
+        # elif user_choice == 'r':
+        #     try:
+        #         os.remove(nc_filename)
+        #         print(f"Removed existing file '{nc_filename}'.")
+        #     except Exception as e:
+        #         print(f"Could not remove file '{nc_filename}': {e}")
+        #         print("Exiting without saving.")
+        #         try:
+        #             nc_file.close()
+        #         except Exception:
+        #             pass
+        # else:
+        #     print("Invalid input. Exiting without saving.")
+        #     try:
+        #         nc_file.close()
+        #     except Exception:
+        #         pass
 
     nc_file = nc.Dataset(nc_filename, 'w', format='NETCDF4')
     write_netcdf(nc_file, ncvars, dims, global_attrs)
@@ -317,6 +333,9 @@ def process_target_data(nc_dict, vars_vn, vars_strs, var_interest, ncvars, dims,
     """Process target data with memory cleanup"""
     ncase = dims['ncase']
     
+    combo = list(itertools.product(*vars_strs))[0]
+    ic_str = "".join(combo)
+
     for ivar in var_interest:
         if 'nlevel' in ncvars['tgt_' + ivar]['dims']:
             if 'nlevel' not in dims:
