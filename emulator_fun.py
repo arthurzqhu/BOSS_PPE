@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import netCDF4 as nc
 # from numba import cuda
 import gc
@@ -501,12 +500,12 @@ def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
                 presence[presence<0.5] = 0.
                 presence[presence>=0.5] = 1.
                 
-            y_model_raw = model(x_val)[varcon][:,:nobs[i]].numpy().astype('float64')
-            y_model_unc = tf.nn.softplus(model(x_val)[varcon][:,nobs[i]:]).numpy().astype('float64')
+            y_model_raw = model(x_val)[varcon][:,:nobs[i]]
+            y_model_unc = softplus(model(x_val)[varcon][:,nobs[i]:])
             if type(y_val) is dict:
-                y_val_raw = y_val[varcon][:,:nobs[i]].astype('float64')
+                y_val_raw = y_val[varcon][:,:nobs[i]]
             else:
-                y_val_raw = y_val[i].astype('float64')
+                y_val_raw = y_val[i]
             
             y_mdl_inv.append(presence * inverse_transform_data(y_model_raw, transform_method, scalers['y'][i], eff0s[i]))
             y_tgt_inv.append(inverse_transform_data(y_val_raw, transform_method, scalers['y'][i], eff0s[i]))
@@ -584,6 +583,10 @@ def make_weights_dict(y_dict,
                 w = np.where(y <= t0, w_zero, w_pos).astype(np.float32)
         sw[k] = w
     return sw
+
+# instead of importing tensorflow:
+def softplus(x):
+    return np.log(1 + np.exp(x))
 
 smooth_linlog = lambda y, eff0: eff0*np.arcsinh(y/eff0)
 inv_smooth_linlog = lambda y, eff0: eff0*np.sinh(y/eff0)
