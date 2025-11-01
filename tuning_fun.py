@@ -5,9 +5,10 @@ import keras
 from tensorflow.keras import layers
 import pandas as pd
 import matplotlib.pyplot as plt
-import tensorflow.keras.backend as K
+# import tensorflow.keras.backend as K
 from tensorflow.keras.losses import Loss
 import numpy as np
+from keras import ops as K # for some reason, this is needed for the StochasticLatent layer
 
 SQRT2   = tf.sqrt(tf.constant(2., tf.float32))
 SQRT_PI = tf.sqrt(tf.constant(np.pi, tf.float32))
@@ -151,24 +152,24 @@ def gaussian_crps_loss_factory(n_obs, mask_min=-999.0, min_sigma=1e-6):
         sigma = tf.nn.softplus(rsca) + tf.constant(min_sigma, tf.float32)
 
         # Mask invalid/missing targets
-        mask = tf.greater(y_true, tf.constant(mask_min, y_true.dtype))
+        mask = K.greater(y_true, K.cast(mask_min, y_true.dtype))
         # If everything is masked for a batch item, avoid NaNs by giving zero weight
-        mask_f = tf.cast(mask, tf.float32)
+        mask_f = K.cast(mask, "float32")
 
         # z = (y - μ)/σ
         z   = (y_true - mu) / sigma
         # φ(z), Φ(z)
-        phi = tf.exp(-0.5 * tf.square(z)) / SQRT_2PI
-        Phi = 0.5 * (1.0 + tf.math.erf(z / SQRT2))
+        phi = K.exp(-0.5 * K.square(z)) / SQRT_2PI
+        Phi = 0.5 * (1.0 + K.erf(z / SQRT2))
 
         # CRPS for N(μ, σ): σ [ z(2Φ-1) + 2φ - 1/√π ]
         crps = sigma * ( z * (2.0 * Phi - 1.0) + 2.0 * phi - inv_sqrt_pi )
 
         # Apply mask and average over observed entries then over batch
-        crps_sum   = tf.reduce_sum(crps * mask_f, axis=1)
-        count_obs  = tf.reduce_sum(mask_f, axis=1) + 1e-9  # avoid div-by-zero
+        crps_sum   = K.sum(crps * mask_f, axis=1)
+        count_obs  = K.sum(mask_f, axis=1) + 1e-9  # avoid div-by-zero
         crps_mean_per_item = crps_sum / count_obs
-        return tf.reduce_mean(crps_mean_per_item)          # scalar
+        return K.mean(crps_mean_per_item)          # scalar
 
     return loss
 
@@ -254,8 +255,140 @@ def plot_history(history):
     plt.show()
 
 
+# ------------------------- variational autoencoder tests -------------------------
 
+# ----------------------------
+# New: latent space building blocks
+# ----------------------------
 
+class StochasticLatent(layers.Layer):
+    """
+    Samples z and adds a KL penalty via self.add_loss().
+    Logs kl_mean via an internal Metric tracker (Keras 3-safe).
+    """
+    def __init__(self, kl_weight=1e-4, name=None, **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.kl_weight = float(kl_weight)
+        self.kl_mean_tracker = keras.metrics.Mean(name="kl_mean")
+
+    def call(self, inputs):
+        mean_z, logvar_z = inputs
+        eps = keras.random.normal(shape=K.shape(mean_z), dtype=mean_z.dtype)
+        z = mean_z + K.exp(0.5 * logvar_z) * eps
+
+        kl = -0.5 * K.sum(1.0 + logvar_z - K.square(mean_z) - K.exp(logvar_z), axis=-1)
+        kl_mean = K.mean(kl)
+
+        # register penalty
+        self.add_loss(self.kl_weight * kl_mean)
+        # log metric via tracker
+        self.kl_mean_tracker.update_state(kl_mean)
+        return z
+
+    # expose tracker so Model sees it
+    @property
+    def metrics(self):
+        return [self.kl_mean_tracker]
+
+    # help some build paths with shape inference
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
+
+class ReconPenalty(layers.Layer):
+    """
+    Adds MSE(x, x_recon) * weight via self.add_loss().
+    Logs recon_mse via a Metric tracker (no add_metric()).
+    """
+    def __init__(self, weight=1e-3, name=None, **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.weight = float(weight)
+        self.recon_mse_tracker = keras.metrics.Mean(name="recon_mse")
+
+    def call(self, inputs):
+        x, x_recon = inputs
+        mse = K.mean(K.square(x - x_recon))
+        self.add_loss(self.weight * mse)
+        self.recon_mse_tracker.update_state(mse)
+        return x_recon
+
+    @property
+    def metrics(self):
+        return [self.recon_mse_tracker]
+
+    def compute_output_shape(self, input_shape):
+        # returns shape of x_recon
+        return input_shape[1]
+
+def build_encoder_block(x, units_list, activation='relu', dropout_rate=None, training=False):
+    h = x
+    for i, u in enumerate(units_list):
+        h = layers.Dense(u, activation=activation, name=f"enc_dense_{i}")(h)
+        if dropout_rate is not None:
+            # Keep your Monte Carlo dropout behavior if desired
+            h = layers.Dropout(dropout_rate)(h, training=training)
+    return h
+
+def build_decoder_block(z, npar, units_list=(128, 256), activation='relu'):
+    h = z
+    for i, u in enumerate(units_list):
+        h = layers.Dense(u, activation=activation, name=f"dec_dense_{i}")(h)
+    x_recon = layers.Dense(npar, name="x_recon")(h)
+    return x_recon
+
+def build_reg_crps_latent_model(
+    hp, npar, varcons, nobs, l_dropout=False,
+):
+    inputs = layers.Input(shape=(npar,), name="x")
+    x = inputs
+
+    # shared trunk (same as before)
+    num_shared_layers = hp.Int("num_shared_layers", 1, 5, step=1)
+    if l_dropout:
+        dropout_rate = hp.Float("dropout_rate", 0.1, 0.5, step=0.1)
+    for i in range(num_shared_layers):
+        units = hp.Int(f"units_{i}", 32, 256, step=32)
+        x = layers.Dense(units, activation="relu", name=f"enc_dense_{i}")(x)
+        if l_dropout:
+            x = layers.Dropout(dropout_rate)(x, training=True)
+
+    # latent
+    latent_k = hp.Int("latent_k", 2, 16, step=2)
+    use_stochastic_latent = hp.Boolean("use_stochastic_latent", default=True)
+    if use_stochastic_latent:
+        z_mu     = layers.Dense(latent_k, name="z_mu")(x)
+        z_logvar = layers.Dense(latent_k, name="z_logvar")(x)
+        kl_weight = hp.Float("lambda_kl", 1e-5, 1e-2, sampling="LOG")
+        z = StochasticLatent(kl_weight=kl_weight, name="z_sampler")([z_mu, z_logvar])
+    else:
+        z = layers.Dense(latent_k, name="z")(x)
+
+    # optional decoder regularizer (no model.add_loss)
+    use_decoder = hp.Boolean("use_decoder", default=False)
+    if use_decoder:
+        dec_u0 = hp.Int("dec_u0", 64, 256, step=64)
+        dec_u1 = hp.Int("dec_u1", 64, 256, step=64)
+        h = layers.Dense(dec_u0, activation="relu", name="dec_dense_0")(z)
+        h = layers.Dense(dec_u1, activation="relu", name="dec_dense_1")(h)
+        x_recon_raw = layers.Dense(npar, name="x_recon")(h)
+        recon_w = hp.Float("lambda_recon", 1e-4, 1e-1, sampling="LOG")
+        # attaches loss internally and returns x_recon
+        _ = ReconPenalty(weight=recon_w, name="recon_penalty")([inputs, x_recon_raw])
+
+    outputs = {}
+    loss_dict = {}
+    metrics = {}
+    for i, varcon in enumerate(varcons):
+        head_units = hp.Int(f"{varcon}_head_units", 32, 256, step=32)
+        h = layers.Dense(head_units, activation="relu", name=f"{varcon}_head_dense")(z)
+        outputs[varcon] = layers.Dense(2 * nobs[i], name=varcon)(h)
+        loss_dict[varcon] = gaussian_crps_loss_factory(nobs[i], mask_min=-999.0, min_sigma=1e-6)
+        metrics[varcon]   = [masked_mae_from_mu_factory(nobs[i], mask_min=-999.0)]
+
+    model = keras.Model(inputs=inputs, outputs=outputs, name="reg_crps_latent")
+
+    lr = hp.Float("adam_lr", 1e-5, 1e-2, sampling="LOG")
+    model.compile(optimizer=keras.optimizers.Adam(lr), loss=loss_dict, metrics=metrics)
+    return model
 
 
 
