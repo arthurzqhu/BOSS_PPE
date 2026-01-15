@@ -251,7 +251,7 @@ def load_cm1(file_info, var_interest, nc_dict, continuous_ic, ippe=0):
 def var2phys(var_name, file_paths, dt, zf, rho):
 
     # handle scalars
-    if 't_precip_onset' in var_name or 'precip_max_dm' in var_name:
+    if 't_precip_onset' in var_name:
         # really dumb way to deal with flawed output ... will fix CM1 output later to not have to do this
         t_tmp = 21600.
         idx = -1
@@ -360,12 +360,14 @@ def var2phys(var_name, file_paths, dt, zf, rho):
                 # guard index 64
                 yidx = rawdata.shape[2] // 2
                 val_timeseries.append(rawdata[0, :, yidx, :])
-            elif 'prate_dm' in var_name or 'precip_max_dm' or 'precip_onset':
+            elif 'prate_dm' in var_name:
                 val_timeseries.append(np.mean(rawdata))
             else:
                 val_timeseries.append(rawdata[0, ...])
 
     arr = np.array(val_timeseries)  # ensure shapes are consistent across files
+    if 'precip_max_dm' in var_name:
+        arr = np.max(arr)
     if '_runmean' in var_name:
         arr = np.mean(arr)
     return arr
