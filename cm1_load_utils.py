@@ -52,42 +52,42 @@ output_var_set = {
                   'M5_curtain_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
                   'M6_curtain_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
                   'M9_curtain_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'M9'},
-                  'M0_path_last2hrmean': {'var_source': 'qc0', 'var_unit': '1/$m^2$', 'longname': 'Last 2hr Mean LNP'}, 
-                  'M3_path_last2hrmean': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'Last 2hr Mean LWC'}, 
-                  'M4_path_last2hrmean': {'var_source': 'qc4', 'var_unit': '$m^4$/$m^2$', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean M4'},
-                  'M5_path_last2hrmean': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'Last 2hr Mean M5'},
-                  'M6_path_last2hrmean': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean M6'},
-                  'M9_path_last2hrmean': {'var_source': 'qc9', 'var_unit': '$m^9$/$m^2$', 'scale': 1e-4**9, 'longname': 'Last 2hr Mean M9'},
-                  'M0_dmpath_last2hrmean': {'var_source': 'qc0', 'var_unit': '1/$m^2$', 'longname': 'Last 2hr Mean LNP'}, 
-                  'M3_dmpath_last2hrmean': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'Last 2hr Mean LWC'}, 
-                  'M4_dmpath_last2hrmean': {'var_source': 'qc4', 'var_unit': '$m^4$/$m^2$', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean M4'},
-                  'M5_dmpath_last2hrmean': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'Last 2hr Mean M5'},
-                  'M6_dmpath_last2hrmean': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean M6'},
-                  'M9_dmpath_last2hrmean': {'var_source': 'qc9', 'var_unit': '$m^9$/$m^2$', 'scale': 1e-4**9, 'longname': 'Last 2hr Mean M9'},
-                  'M0_10m_last2hrmean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Last 2hr Mean LNP'}, 
-                  'M3_10m_last2hrmean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Last 2hr Mean LWC'}, 
-                  'M4_10m_last2hrmean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean M4'},
-                  'M5_10m_last2hrmean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Last 2hr Mean M5'},
-                  'M6_10m_last2hrmean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean M6'},
-                  'M9_10m_last2hrmean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Last 2hr Mean M9'},
-                  'M0_250m_last2hrmean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Last 2hr Mean LNP'}, 
-                  'M3_250m_last2hrmean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Last 2hr Mean LWC'}, 
-                  'M4_250m_last2hrmean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean M4'},
-                  'M5_250m_last2hrmean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Last 2hr Mean M5'},
-                  'M6_250m_last2hrmean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean M6'},
-                  'M9_250m_last2hrmean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Last 2hr Mean M9'},
+                  'M0_path_ss_mean': {'var_source': 'qc0', 'var_unit': '1/$m^2$', 'longname': 'Steady State LNP'}, 
+                  'M3_path_ss_mean': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'Steady State LWC'}, 
+                  'M4_path_ss_mean': {'var_source': 'qc4', 'var_unit': '$m^4$/$m^2$', 'scale': 1e-4**4, 'longname': 'Steady State M4'},
+                  'M5_path_ss_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
+                  'M6_path_ss_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
+                  'M9_path_ss_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/$m^2$', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
+                  'M0_dmpath_ss_mean': {'var_source': 'qc0', 'var_unit': '1/$m^2$', 'longname': 'Steady State LNP'}, 
+                  'M3_dmpath_ss_mean': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'Steady State LWC'}, 
+                  'M4_dmpath_ss_mean': {'var_source': 'qc4', 'var_unit': '$m^4$/$m^2$', 'scale': 1e-4**4, 'longname': 'Steady State M4'},
+                  'M5_dmpath_ss_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
+                  'M6_dmpath_ss_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
+                  'M9_dmpath_ss_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/$m^2$', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
+                  'M0_10m_ss_mean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP'}, 
+                  'M3_10m_ss_mean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC'}, 
+                  'M4_10m_ss_mean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4'},
+                  'M5_10m_ss_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
+                  'M6_10m_ss_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
+                  'M9_10m_ss_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
+                  'M0_250m_ss_mean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP'}, 
+                  'M3_250m_ss_mean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC'}, 
+                  'M4_250m_ss_mean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4'},
+                  'M5_250m_ss_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
+                  'M6_250m_ss_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
+                  'M9_250m_ss_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
                   'M0': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNP'}, 
                   'M3': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
                   'M4': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
                   'M5': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
                   'M6': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
                   'M9': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'M9'},
-                  'M0_last2hrmean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNP'}, 
-                  'M3_last2hrmean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
-                  'M4_last2hrmean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
-                  'M5_last2hrmean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
-                  'M6_last2hrmean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
-                  'M9_last2hrmean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'M9'},
+                  'M0_ss_mean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNP'}, 
+                  'M3_ss_mean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
+                  'M4_ss_mean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
+                  'M5_ss_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
+                  'M6_ss_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
+                  'M9_ss_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'M9'},
                   'u_dmprof': {'var_source': 'uinterp', 'var_unit': 'm/s', 'longname': 'Horizontal Wind (x) Domain-Mean Profile'},
                   'v_dmprof': {'var_source': 'vinterp', 'var_unit': 'm/s', 'longname': 'Horizontal Wind (y) Domain-Mean Profile'},
                   'w_dmprof': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind (z) Domain-Mean Profile'},
@@ -99,69 +99,69 @@ output_var_set = {
                   'w_curtain_slice': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind (z) Curtain Slice'},
                   'w': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind (z)'},
                   'prate_dm': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Domain-Mean Precipitation Rate'},
-                  'prate_last2hrmean': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Last 2hr Mean Precipitation Rate'},
-                  'prate_dm_last2hrmean': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Last 2hr Mean Domain-Mean Precipitation Rate'},
-                  'prate_last2hrstd': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Last 2hr Mean Domain-Std Precipitation Rate'},
-                  'prate_last2hr10th_prct': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Last 2hr 10th percentile Precipitation Rate'},
-                  'prate_last2hr90th_prct': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Last 2hr 90th percentile Precipitation Rate'},
+                  'prate_ss_mean': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Steady State Precipitation Rate'},
+                  'prate_dm_ss_mean': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Steady State Domain-Mean Precipitation Rate'},
+                  'prate_ss_std': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Steady State Domain-Std Precipitation Rate'},
+                  'prate_ss_10th_prct': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Steady State 10th percentile Precipitation Rate'},
+                  'prate_ss_90th_prct': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Steady State 90th percentile Precipitation Rate'},
                   'sedflux_m0': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Sedflux M0'},
                   'sedflux_m3': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Sedflux M3'},
                   'sedflux_m4': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Sedflux M4'},
                   'sedflux_m6': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Sedflux M6'},
-                  'sfM0_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Last 2hr Mean Sedflux M0'},
-                  'sfM3_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3'},
-                  'sfM4_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4'},
-                  'sfM6_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6'},
-                  'sfM0_per5lvl': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Last 2hr Mean Sedflux M0 per 5 levels'},
-                  'sfM3_per5lvl': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3 per 5 levels'},
-                  'sfM4_per5lvl': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4 per 5 levels'},
-                  'sfM6_per5lvl': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6 per 5 levels'},
-                  'sfM0_per5lvl_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Last 2hr Mean Sedflux M0 per 5 levels'},
-                  'sfM3_per5lvl_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3 per 5 levels'},
-                  'sfM4_per5lvl_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4 per 5 levels'},
-                  'sfM6_per5lvl_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6 per 5 levels'},
-                  'M0_per5lvl': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Last 2hr Mean LNP'}, 
-                  'M3_per5lvl': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Last 2hr Mean LWC'}, 
-                  'M4_per5lvl': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean M4'},
-                  'M5_per5lvl': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Last 2hr Mean M5'},
-                  'M6_per5lvl': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean M6'},
-                  'M9_per5lvl': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Last 2hr Mean M9'},
-                  'M0_per5lvl_last2hrmean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Last 2hr Mean LNP'}, 
-                  'M3_per5lvl_last2hrmean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Last 2hr Mean LWC'}, 
-                  'M4_per5lvl_last2hrmean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean M4'},
-                  'M5_per5lvl_last2hrmean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Last 2hr Mean M5'},
-                  'M6_per5lvl_last2hrmean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean M6'},
-                  'M9_per5lvl_last2hrmean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Last 2hr Mean M9'},
-                  'sfM0_dm_10m_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Last 2hr Mean Sedflux M0 10m'},
-                  'sfM3_dm_10m_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3 10m'},
-                  'sfM4_dm_10m_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4 10m'},
-                  'sfM6_dm_10m_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6 10m'},
-                  'sfM0_dm_100m_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Last 2hr Mean Sedflux M0 100m'},
-                  'sfM3_dm_100m_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3 100m'},
-                  'sfM4_dm_100m_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4 100m'},
-                  'sfM6_dm_100m_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6 100m'},
-                  'sfM0_dm_250m_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Last 2hr Mean Sedflux M0 250m'},
-                  'sfM3_dm_250m_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3 250m'},
-                  'sfM4_dm_250m_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4 250m'},
-                  'sfM6_dm_250m_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6 250m'},
-                  'sfM0_dm_500m_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Last 2hr Mean Sedflux M0 500m'},
-                  'sfM3_dm_500m_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3 500m'},
-                  'sfM4_dm_500m_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4 500m'},
-                  'sfM6_dm_500m_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6 500m'},
-                  'sfM0_dm_750m_last2hrmean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Last 2hr Mean Sedflux M0 750m'},
-                  'sfM3_dm_750m_last2hrmean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Last 2hr Mean Sedflux M3 750m'},
-                  'sfM4_dm_750m_last2hrmean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Last 2hr Mean Sedflux M4 750m'},
-                  'sfM6_dm_750m_last2hrmean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Last 2hr Mean Sedflux M6 750m'},
-                  't_precip_onset':{'var_source': 't_precip_onset', 'var_unit': 's', 'longname': 'Precipitation Onset'},
+                  'sfM0_ss_mean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0'},
+                  'sfM3_ss_mean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3'},
+                  'sfM4_ss_mean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4'},
+                  'sfM6_ss_mean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6'},
+                  'sfM0_per5lvl': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0 per 5 levels'},
+                  'sfM3_per5lvl': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3 per 5 levels'},
+                  'sfM4_per5lvl': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 per 5 levels'},
+                  'sfM6_per5lvl': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 per 5 levels'},
+                  'sfM0_per5lvl_ss_mean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0 per 5 levels'},
+                  'sfM3_per5lvl_ss_mean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3 per 5 levels'},
+                  'sfM4_per5lvl_ss_mean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 per 5 levels'},
+                  'sfM6_per5lvl_ss_mean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 per 5 levels'},
+                  'M0_per5lvl': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP'}, 
+                  'M3_per5lvl': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC'}, 
+                  'M4_per5lvl': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4'},
+                  'M5_per5lvl': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
+                  'M6_per5lvl': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
+                  'M9_per5lvl': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
+                  'M0_per5lvl_ss_mean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP'}, 
+                  'M3_per5lvl_ss_mean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC'}, 
+                  'M4_per5lvl_ss_mean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4'},
+                  'M5_per5lvl_ss_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
+                  'M6_per5lvl_ss_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
+                  'M9_per5lvl_ss_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
+                  'sfM0_dm_10m_ss_mean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0 10m'},
+                  'sfM3_dm_10m_ss_mean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3 10m'},
+                  'sfM4_dm_10m_ss_mean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 10m'},
+                  'sfM6_dm_10m_ss_mean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 10m'},
+                  'sfM0_dm_100m_ss_mean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0 100m'},
+                  'sfM3_dm_100m_ss_mean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3 100m'},
+                  'sfM4_dm_100m_ss_mean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 100m'},
+                  'sfM6_dm_100m_ss_mean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 100m'},
+                  'sfM0_dm_250m_ss_mean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0 250m'},
+                  'sfM3_dm_250m_ss_mean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3 250m'},
+                  'sfM4_dm_250m_ss_mean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 250m'},
+                  'sfM6_dm_250m_ss_mean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 250m'},
+                  'sfM0_dm_500m_ss_mean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0 500m'},
+                  'sfM3_dm_500m_ss_mean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3 500m'},
+                  'sfM4_dm_500m_ss_mean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 500m'},
+                  'sfM6_dm_500m_ss_mean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 500m'},
+                  'sfM0_dm_750m_ss_mean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0 750m'},
+                  'sfM3_dm_750m_ss_mean': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3 750m'},
+                  'sfM4_dm_750m_ss_mean': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 750m'},
+                  'sfM6_dm_750m_ss_mean': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 750m'},
+                  'v_precip_onset':{'var_source': 'prate', 'var_unit': '1/hr', 'longname': 'Precipitation Onset Speed'},
                   'precip_max_dm':{'var_source': 'max_dm_prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Peak Precipitation'},
-                  'meanD_dm_03_10m_last2hrmean':  {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Last 2hr Mean mass-meandiam 10m'},
-                  'meanD_dm_03_100m_last2hrmean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Last 2hr Mean mass-meandiam 100m'},
-                  'meanD_dm_03_250m_last2hrmean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Last 2hr Mean mass-meandiam 250m'},
-                  'meanD_dm_03_500m_last2hrmean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Last 2hr Mean mass-meandiam 500m'},
-                  'meanD_dm_36_10m_last2hrmean':  {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Last 2hr Mean M6-meandiam 10m'},
-                  'meanD_dm_36_100m_last2hrmean': {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Last 2hr Mean M6-meandiam 100m'},
-                  'meanD_dm_36_250m_last2hrmean': {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Last 2hr Mean M6-meandiam 250m'},
-                  'meanD_dm_36_500m_last2hrmean': {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Last 2hr Mean M6-meandiam 500m'},
+                  'meanD_dm_03_10m_ss_mean':  {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam 10m'},
+                  'meanD_dm_03_100m_ss_mean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam 100m'},
+                  'meanD_dm_03_250m_ss_mean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam 250m'},
+                  'meanD_dm_03_500m_ss_mean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam 500m'},
+                  'meanD_dm_36_10m_ss_mean':  {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Steady State M6-meandiam 10m'},
+                  'meanD_dm_36_100m_ss_mean': {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Steady State M6-meandiam 100m'},
+                  'meanD_dm_36_250m_ss_mean': {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Steady State M6-meandiam 250m'},
+                  'meanD_dm_36_500m_ss_mean': {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Steady State M6-meandiam 500m'},
                   }
 
 def get_ppe_idx(file_info):
@@ -172,7 +172,7 @@ def get_ppe_idx(file_info):
     ppe_idx = lp.sort_strings_by_number(ppe_idx)
     return ppe_idx
 
-def load_cm1(file_info, var_interest, nc_dict, continuous_ic, ippe=0):
+def load_cm1(file_info, var_interest, nc_dict, continuous_ic, ss_hrs=2, ippe=0):
     mp          = file_info['mp_config']
     vars_vn     = file_info['vars_vn']
     fdir        = file_info['dir']
@@ -244,44 +244,58 @@ def load_cm1(file_info, var_interest, nc_dict, continuous_ic, ippe=0):
     for var_name in var_interest:
         dst = nc_dict[ic_str][mp] if ippe == 0 else nc_dict[ic_str][mp][ippe]
         dst.setdefault(var_name, {})
-        dst[var_name]['value'] = var2phys(var_name, file_paths, dt, zf, rho)
+        dst[var_name]['value'] = var2phys(var_name, ss_hrs, file_paths, dt, zf, rho)
         dst[var_name]['units'] = output_var_set[var_name]['var_unit']
 
 
-def var2phys(var_name, file_paths, dt, zf, rho):
+def var2phys(var_name, ss_hrs, file_paths, dt, zf, rho):
 
     # handle scalars
-    if 't_precip_onset' in var_name:
+    if 'v_precip_onset' in var_name:
         # really dumb way to deal with flawed output ... will fix CM1 output later to not have to do this
-        t_tmp = 21600.
-        idx = -1
-        while np.mod(t_tmp, dt) == 0. and idx >= -len(file_paths):
-            with nc.Dataset(file_paths[idx], 'r') as ds:
-                t_tmp = ds.variables[output_var_set[var_name]['var_source']][:]
-            idx -= 1
-        return t_tmp
+        t_tmp = 28800. # 8 hours
+
+        # idx = -1
+        # while np.mod(t_tmp, dt) == 0. and idx >= -len(file_paths):
+        #     with nc.Dataset(file_paths[idx], 'r') as ds:
+        #         t_tmp = ds.variables[output_var_set[var_name]['var_source']][:]
+        #     idx -= 1
+        # return 1./t_tmp
+
+        
+        threshold = 1e-4/3600 # mm/hr to kg/m^2/s
+        prate_dm_timeseries = []
+        for fp in file_paths:
+            with nc.Dataset(fp, 'r') as ds:
+                prate = ds.variables[output_var_set[var_name]['var_source']][:]
+                prate_dm_timeseries.append(np.mean(prate))
+                # Instead of breaking at the first instance, find the second timestamp where mean prate exceeds threshold
+                mean_prate = np.mean(prate)
+                if mean_prate > threshold:
+                    if 'first_exceed_time' not in locals():
+                        first_exceed_time = ds.variables['time'][:]
+                        continue
+                    else:
+                        t_tmp = ds.variables['time'][0]
+                        break
+        return 3600/t_tmp # convert to 1/hr
+
     val_timeseries = []
     dz = zf[1:] - zf[:-1]
     z = (zf[1:] + zf[:-1])/2
     # Handle ..._lastXXhrmean
-    re_lasthrmean = re.search(r'_last(\d+)hrmean', var_name)
-    re_lasthrstd  = re.search(r'_last(\d+)hrstd', var_name)
-    re_lasthrprc  = re.search(r'_last(\d+)hr(\d+)th_prct', var_name)
-    re_domainmean = re.search(r'_dm', var_name)
-    is_lasthrmean = bool(re_lasthrmean)
-    is_lasthrstd  = bool(re_lasthrstd)
-    is_lasthrprc  = bool(re_lasthrprc)
-    is_domainmean = bool(re_domainmean)
-    is_steadystate = max(is_lasthrmean, is_lasthrstd, is_lasthrprc)
+    re_ss_prc  = re.search(r'(\d+)th_prct', var_name)
+    is_ss_mean = bool(re.search(r'ss_mean', var_name))
+    is_ss_std  = bool(re.search(r'ss_std', var_name))
+    is_ss_prc  = bool(re_ss_prc)
+    is_dm = bool(re.search(r'_dm', var_name))
+    is_ss = max(is_ss_mean, is_ss_std, is_ss_prc)
 
-    if is_steadystate:
-        if is_lasthrmean: n_last_hr = int(re_lasthrmean.group(1)) + 1
-        if is_lasthrstd: n_last_hr = int(re_lasthrstd.group(1)) + 1
-        if is_lasthrprc:
-            n_last_hr = int(re_lasthrprc.group(1)) + 1
-            nth_prctl = int(re_lasthrprc.group(2))
+    if is_ss:
+        if is_ss_prc:
+            nth_prctl = int(re_ss_prc.group(2))
 
-        n_needed  = int(np.ceil((n_last_hr * 3600) / dt)) if np.isfinite(dt) and dt > 0 else 1
+        n_needed  = int(np.ceil((ss_hrs * 3600) / dt)) if np.isfinite(dt) and dt > 0 else 1
         for fp in file_paths[-n_needed:]:
             with nc.Dataset(fp, 'r') as ds:
                 vname   = output_var_set[var_name]['var_source']
@@ -292,7 +306,7 @@ def var2phys(var_name, file_paths, dt, zf, rho):
 
                 if 'path' in var_name:
                     dz_broadcast = dz[None, :, None, None]  # (1, z, 1, 1)
-                    if is_lasthrmean: rawdata = np.sum(rawdata * dz_broadcast * rho, axis=(0, 1))  # sum over z, shape (time, y, x)
+                    if is_ss_mean: rawdata = np.sum(rawdata * dz_broadcast * rho, axis=(0, 1))  # sum over z, shape (time, y, x)
                 elif 'per5lvl' in var_name:
                     rawdata = np.mean(rawdata[:, :55:5, :, :], axis=(0, 2, 3))
                 elif 'per10lvl' in var_name:
@@ -325,10 +339,10 @@ def var2phys(var_name, file_paths, dt, zf, rho):
         if 'per5lvl' in var_name:
             out = val_timeavg
         else:
-            if is_lasthrstd: out = np.mean(np.std(val_timeseries, axis=(1,2)))
-            if is_lasthrmean: out = val_timeavg
-            if is_domainmean: out = np.mean(val_timeavg)
-            if is_lasthrprc: 
+            if is_ss_std: out = np.mean(np.std(val_timeseries, axis=(1,2)))
+            if is_ss_mean: out = val_timeavg
+            if is_dm: out = np.mean(val_timeavg)
+            if is_ss_prc: 
                 value_greater_0 = val_timeseries[val_timeseries>0]
                 out = np.percentile(value_greater_0, nth_prctl) if len(value_greater_0) > 0 else 0.
         

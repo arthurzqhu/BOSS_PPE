@@ -10,7 +10,8 @@ def plot_traces(posterior, pnames):
     for d in range(dims):
         for c in range(chains):
             axes[d].plot(posterior[:,c,d], alpha=0.6)
-        axes[d].set_ylabel(pnames[d])
+        if len(pnames) == dims:
+            axes[d].set_ylabel(pnames[d])
     axes[-1].set_xlabel('Iteration')
     plt.tight_layout()
     plt.show()

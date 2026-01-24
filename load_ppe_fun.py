@@ -116,7 +116,7 @@ indvar_name_set = ['diagM3_cloud','diagM3_rain',
 indvar_ename_set = ['CWC','RWC', #1
                     'CWP','RWP','LWP', #4
                     'Nc','Nr', #6
-                    'albedo','optical depth','surface pcpt. rate','RH', #10
+                    'albedo','optical depth','surface_precip','RH', #10
                     'GS delta (c)','GS skewness (c)', #13
                     'GS delta (r)','GS skewness (r)', #14
                     'cloud half-life', #15
@@ -329,7 +329,7 @@ def var2phys(raw_data, var_name, var_ename, set_OOB_as_NaN, set_NaN_to_0):
         case 'LNP':
             output_data = raw_data['cloud_M2_path'] + raw_data['rain_M2_path']
             lin_or_log = 'log'
-        case 'surface pcpt. rate':
+        case 'surface_precip':
             output_data = raw_data[var_name]*3600
             threshold = sppt_th[0]
             lin_or_log = 'linear'
@@ -490,5 +490,7 @@ def load_KiD(file_info, var_interest, nc_dict, data_range, continuous_ic,
         var_names = list(dataset.variables.keys())
         for var_name in var_names:
             nc_dict[ic_str][mp][var_name] = dataset.variables[var_name][:]
+
+    dataset.close()
 
     return lin_or_log

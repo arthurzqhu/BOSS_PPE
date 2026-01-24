@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import netCDF4 as nc
-# from numba import cuda
 import gc
 from sklearn import preprocessing
 import sklearn.model_selection as mod_sec
@@ -11,6 +10,7 @@ from matplotlib import gridspec
 import random
 
 ncol_max = 4
+T = 21600.0
 
 def get_param_interest_idx(dataset, return_perturbed_groupname=False):
     """
@@ -155,14 +155,19 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
     for init_var in init_vars:
         if 'case_' + init_var in dataset.variables:
             tgt_initvar_matrix.append(np.expand_dims(dataset.variables['case_' + init_var][:], axis=1))
-
+    var_constraints = getattr(dataset, 'var_constraints')
+    
     if 'thresholds_eff0' in dataset.ncattrs():
         eff0s = getattr(dataset, 'thresholds_eff0')
     else:
         eff0s = []
-    eff0s[4] = 1e-8
-    eff0s[5] = 1e-8
-    var_constraints = getattr(dataset, 'var_constraints')
+    
+    for ivar, varcon in enumerate(var_constraints):
+        if ('prate_dm' in varcon or 'precip_max_dm' in varcon) and len(eff0s) > 0:
+            eff0s[ivar] = 1e-3
+        elif 'prate_last2hrstd' in varcon and len(eff0s) > 0:
+            eff0s[ivar] = 1e-3
+    
     if var_select is not None:
         # check if all variables in var_select are in var_constraints
         var_missing = [v for v in var_select if v not in var_constraints]
@@ -250,6 +255,16 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
             tgt_norm.append(smooth_linlog(tgt_raw_val_reshaped, eff0))
             standscale = preprocessing.StandardScaler().fit(ppe_norm[-1])
             scalers['y'].append(standscale)
+        elif transform_method == 'standard_scaler_blowup_tan':
+            val = blowup_tan(ppe_raw_val_reshaped)
+            # 100 is arbitrary
+            val[val>100] = np.nan
+            ppe_norm.append(val)
+            val = blowup_tan(tgt_raw_val_reshaped)
+            val[val>100] = np.nan
+            tgt_norm.append(val)
+            standscale = preprocessing.StandardScaler().fit(ppe_norm[-1])
+            scalers['y'].append(standscale)
         elif transform_method == 'standard_scaler_log':
             ppe_norm.append(np.log10(ppe_raw_val_reshaped))
             tgt_norm.append(np.log10(tgt_raw_val_reshaped))
@@ -289,7 +304,7 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
     for ivar, (ppe_varr_tmp, ppe_varp_tmp) in enumerate(zip(ppe_data, ppe_var_presence)):
         varcon = var_constraints[ivar]
         if test_size > 0:
-            x_train, x_val, y_train_rawv_single_tmp, y_val_rawv_single_tmp =\
+            x_train, x_val, y_train_rawv_single_tmp, y_val_rawv_single_tmp = \
                 mod_sec.train_test_split(x_all, ppe_varr_tmp, test_size=test_size, random_state=random_state)
             # print(np.where(np.isin(x_train, x_all))[0])
         else:
@@ -339,7 +354,10 @@ def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log):
     ncol = min(ncol_max, nvar)
     nrow = int(np.ceil(nvar/ncol_max))
     fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2))
-    axs = axs.flatten()
+    if isinstance(axs, np.ndarray):
+        axs = axs.flatten()
+    else:
+        axs = [axs]
     
     for i, (yt_tmp, yp_tmp) in enumerate(zip(y_tgt, y_mdl)):
         axs[i].set_aspect('equal')
@@ -368,7 +386,10 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
     ncol = min(ncol_max, nvar)
     nrow = int(np.ceil(nvar/ncol_max))
     fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2), sharex=True)
-    axs = axs.flatten()
+    if isinstance(axs, np.ndarray):
+        axs = axs.flatten()
+    else:
+        axs = [axs]
 
     for i, (yt_tmp, yp_tmp, yunc_tmp) in enumerate(zip(y_tgt, y_mdl, y_mdl_unc)):
         axs[i].set_aspect('equal')
@@ -431,7 +452,10 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log):
     ncol = min(ncol_max, nvar)
     nrow = int(np.ceil(nvar/ncol_max))
     fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2))
-    axs = axs.flatten()
+    if isinstance(axs, np.ndarray):
+        axs = axs.flatten()
+    else:
+        axs = [axs]
     
     for i, (yt_tmp, yp_tmp) in enumerate(zip(y_tgt, y_mdl)):
         # ax = fig.add_subplot(gs[i])
@@ -534,8 +558,8 @@ def filter_zeros_and_get_indices(input_list, throw_away_ratio, seed=None):
     max_zeros_to_remove = int(nppe * throw_away_ratio)
 
     # Get the indices of non-zeros and zeros
-    non_zero_indices = [i for i, x in enumerate(input_list) if x != 0]
-    zero_indices = [i for i, x in enumerate(input_list) if x == 0]
+    non_zero_indices = [i for i, x in enumerate(input_list) if any(x != 0)]
+    zero_indices = [i for i, x in enumerate(input_list) if all(x == 0)]
 
     # Determine how many zeros to keep and randomly sample their indices
     zeros_to_remove = min(int(len(zero_indices)*throw_away_ratio), max_zeros_to_remove)
@@ -554,6 +578,8 @@ def inverse_transform_data(y, transform_method, scaler, eff0=None):
         y_with_possible_nan = inv_smooth_linlog(scaler.inverse_transform(y), eff0)
     elif 'log' in transform_method:
         y_with_possible_nan = scaler.inverse_transform(10**y)
+    elif 'blowup_tan' in transform_method:
+        y_with_possible_nan = blowup_tan_inv(scaler.inverse_transform(y))
     else:
         y_with_possible_nan = scaler.inverse_transform(y)        
     return np.nan_to_num(y_with_possible_nan, nan=0, neginf=0, posinf=0)
@@ -584,10 +610,9 @@ def make_weights_dict(y_dict,
         sw[k] = w
     return sw
 
-# instead of importing tensorflow:
-def softplus(x):
-    return np.log(1 + np.exp(x))
-
+softplus = lambda x: np.log(1 + np.exp(x))
 smooth_linlog = lambda y, eff0: eff0*np.arcsinh(y/eff0)
 inv_smooth_linlog = lambda y, eff0: eff0*np.sinh(y/eff0)
 boxcox = lambda y, lam: (y**lam - 1)/lam if lam != 0 else np.log(y)
+blowup_tan = lambda t: np.tan(np.pi * (t / T - 0.5))
+blowup_tan_inv = lambda y: T * (0.5 + (1.0/np.pi) * np.arctan(y))
