@@ -13,10 +13,12 @@ from time import sleep
 import matplotlib.colors as mcolors
 from matplotlib.colors import LogNorm
 import itertools
-import util_fun as uf
 import re
+import socket
 import pandas as pd
 import netCDF4 as nc
+import dask
+from dask.distributed import Client, progress
 
 import sys
 from tqdm.auto import tqdm
@@ -27,15 +29,31 @@ tqdm.monitor_interval = 0  # <- important
 # Only show bars on a TTY (prevents odd behaviour in batch)
 tqdm_disable = not sys.stderr.isatty()
 
+# Perlmutter/Lustre fix: Disable HDF5 file locking
+os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
+
 def main():
     """Main function to process PPE data with memory efficiency"""
     # Configuration
+    l_parallel = False
+    l_testing = False
+    n_test = 3
     nikki = ''
     target_nikki = 'target'
-    sim_config = 'nosed_best_lhs'
-    target_sim_config = 'nosed_tgt_loginit_fixcoal'
-    # sim_config = 'fullmp_ppe_KiD_log_r1_custom_lhs'
-    # target_sim_config = 'fullmp_tgt_loginit_fixcoal'
+    # sim_config = 'NCE_joint_dycoms_1tncevp_lhs'
+    # target_sim_config = 'NCE_dycoms'
+    # steady_state_hrs = 2
+    # sim_config = 'fullmp_joint_dycoms_eo4_lhs'
+    # target_sim_config = 'fullmp_dycoms_t_onset_1e-4'
+    sim_config = 'NCE_rico_2xdx_lhs'
+    target_sim_config = 'NCE_rico_2xdx'
+    steady_state_hrs = 4
+    # sim_config = 'fullmp_joint_rico_eo4_lhs'
+    # target_sim_config = 'fullmp_rico_t_onset_1e-4'
+    lwp_threshold = 0.02
+    print('lwp_threshold:', lwp_threshold)
+    print('PPE directory:', sim_config)
+    print('target directory:', target_sim_config)
     
     if not os.path.exists(lp.nc_dir):
         os.makedirs(lp.nc_dir)
@@ -48,21 +66,27 @@ def main():
     vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
     var_interest = []
     var_interest += [
-            'M0_path_last2hrmean', 'M3_path_last2hrmean', 'M4_path_last2hrmean', 'M6_path_last2hrmean', 
-            'M0_10m_last2hrmean', 'M3_10m_last2hrmean', 'M4_10m_last2hrmean', 'M6_10m_last2hrmean', 
-            'M0_250m_last2hrmean', 'M3_250m_last2hrmean', 'M4_250m_last2hrmean', 'M6_250m_last2hrmean', 
-                     # 'prate_dm_last2hrmean', 'prate_dm_last2hrstd'
+            'M0_dmpath_ss_mean', 'M3_dmpath_ss_mean', 'M4_dmpath_ss_mean', 'M6_dmpath_ss_mean', 
+            'M0_path_ss_std', 'M3_path_ss_std', 'M4_path_ss_std', 'M6_path_ss_std', 
+            'M6_ss_99th_prctl', 'M6_ss_std', 'meanD_dm_03_ss_mean',
+            # 'M0_per5lvl', 'M3_per5lvl', 'M4_per5lvl', 'M6_per5lvl', 
+            # 'meanD_dm_03_10m_ss_mean', 'meanD_dm_03_100m_ss_mean', 'meanD_dm_03_250m_ss_mean', 'meanD_dm_03_500m_ss_mean',
+            # 'meanD_dm_36_10m_ss_mean', 'meanD_dm_36_100m_ss_mean', 'meanD_dm_36_250m_ss_mean', 'meanD_dm_36_500m_ss_mean',
+            # 'M0_10m_ss_mean', 'M3_10m_ss_mean', 'M4_10m_ss_mean', 'M6_10m_ss_mean', 
+            # 'M0_250m_ss_mean', 'M3_250m_ss_mean', 'M4_250m_ss_mean', 'M6_250m_ss_mean', 
+             # 'prate_dm_ss_mean', 'prate_ss_std', 'v_precip_onset', 'precip_max_dm',
                      ] # domain-mean path
-    # var_interest += ['M0_path_last2hrmean', 'M3_path_last2hrmean', 'M4_path_last2hrmean', 'M6_path_last2hrmean',] # domain-mean path
-    # var_interest += ['M0_per5lvl_last2hrmean', 'M3_per5lvl_last2hrmean', 'M4_per5lvl_last2hrmean', 'M6_per5lvl_last2hrmean']
-    # var_interest += ['sfM0_per5lvl_last2hrmean', 'sfM3_per5lvl_last2hrmean', 'sfM4_per5lvl_last2hrmean', 'sfM6_per5lvl_last2hrmean'] # domain-mean fluxes
-    # var_interest += ['sfM0_10m_last2hrmean', 'sfM3_10m_last2hrmean', 'sfM4_10m_last2hrmean', 'sfM6_10m_last2hrmean',
-    #              'sfM0_250m_last2hrmean', 'sfM3_250m_last2hrmean', 'sfM4_250m_last2hrmean', 'sfM6_250m_last2hrmean',
-    #              'sfM0_500m_last2hrmean', 'sfM3_500m_last2hrmean', 'sfM4_500m_last2hrmean', 'sfM6_500m_last2hrmean',
-    #                  ]
-    print("Memory usage at start:")
-    uf.detailed_memory_analysis()
-    
+    # var_interest += ['M0_path_ss_mean', 'M3_path_ss_mean', 'M4_path_ss_mean', 'M6_path_ss_mean',] # domain-mean path
+    # var_interest += ['M0_per5lvl_ss_mean', 'M3_per5lvl_ss_mean', 'M4_per5lvl_ss_mean', 'M6_per5lvl_ss_mean']
+    # var_interest += ['sfM0_per5lvl_ss_mean', 'sfM3_per5lvl_ss_mean', 'sfM4_per5lvl_ss_mean', 'sfM6_per5lvl_ss_mean'] # domain-mean fluxes
+    var_interest += [
+            # 'sfM0_per5lvl', 'sfM3_per5lvl', 'sfM4_per5lvl', 'sfM6_per5lvl',
+            # 'sfM0_dm_10m_ss_mean',  'sfM3_dm_10m_ss_mean',  'sfM4_dm_10m_ss_mean',  'sfM6_dm_10m_ss_mean',
+            # 'sfM0_dm_100m_ss_mean', 'sfM3_dm_100m_ss_mean', 'sfM4_dm_100m_ss_mean', 'sfM6_dm_100m_ss_mean',
+            # 'sfM0_dm_250m_ss_mean', 'sfM3_dm_250m_ss_mean', 'sfM4_dm_250m_ss_mean', 'sfM6_dm_250m_ss_mean',
+            # 'sfM0_dm_500m_ss_mean', 'sfM3_dm_500m_ss_mean', 'sfM4_dm_500m_ss_mean', 'sfM6_dm_500m_ss_mean',
+                     ]
+
     # Process data
     
     file_info = {'dir': cl.output_dir, 
@@ -80,24 +104,85 @@ def main():
     ppe_idx = cl.get_ppe_idx(file_info)
     ppe_idx = [int(i) for i in ppe_idx]
 
-    nc_filename = f"{lp.nc_dir}{sim_config}_momval_pratespec_sf3layers_N{len(ppe_idx)}.nc"
+    if l_testing:
+        ppe_idx = ppe_idx[:n_test]
+        if n_test < len(vars_strs[0]):
+            vars_strs = [vars_strs[0][:n_test]]
+        else:
+            vars_strs = [vars_strs[0]]
 
-    for ippe in tqdm(ppe_idx, desc='loading BOSS data'):
-        cl.load_cm1(file_info, var_interest, nc_dict, True, ippe=ippe)
+    if l_testing:
+        nc_filename = f"{lp.nc_dir}{sim_config}_momval_lwp{lwp_threshold}_test_N{n_test}.nc"
+    else:
+        nc_filename = f"{lp.nc_dir}{sim_config}_momval_lwp{lwp_threshold}_N{len(ppe_idx)}.nc"
+
+    if l_parallel:
+        # On compute nodes, use processes (True) for library isolation (NetCDF is often not thread-safe).
+        # We limit workers to avoid memory/IO pressure on the Lustre filesystem.
+        dask_scratch = os.path.join(os.environ.get('PSCRATCH', '/tmp'), 'dask-scratch-space')
+        
+        # Using a reasonable number of workers (e.g., 16) even on a full compute node 
+        # is usually safer and faster for I/O bound NetCDF tasks.
+        client = Client(n_workers=16, threads_per_worker=1, processes=True, local_directory=dask_scratch)
+        print(f"Dask dashboard available at: {client.dashboard_link}")
+        print(f"Using 16 Processes. Scratch: {dask_scratch}")
+        
+        tasks = []
+        for ippe in ppe_idx:
+            # We pass None as nc_dict so it returns a new one for each member
+            task = dask.delayed(cl.load_cm1)(
+                file_info, var_interest, None, True, 
+                ss_hrs=steady_state_hrs, ippe=ippe, lwp_threshold=lwp_threshold
+            )
+            tasks.append(task)
+        
+        print("Computing PPE data in parallel...")
+        futures = client.compute(tasks)
+        progress(futures)
+        results = client.gather(futures)
+        
+        for r in tqdm(results, desc='merging PPE results'):
+            cl.deep_merge(nc_dict, r)
+    else:
+        for ippe in tqdm(ppe_idx, desc='loading BOSS data'):
+            cl.load_cm1(file_info, var_interest, nc_dict, True, ss_hrs=steady_state_hrs, ippe=ippe, lwp_threshold=lwp_threshold)
 
     # Load target data
     print("\nLoading target data...")
-    for initcond_combo in tqdm(itertools.product(*vars_strs), desc='loading BIN data'):
-        # ic_str = "".join(initcond_combo)
-        file_info.update({'sim_config': target_sim_config,
-                        'vars_str': list(initcond_combo),
-                        'date': target_nikki,
-                        'mp_config': target_mp})
-        cl.load_cm1(file_info, var_interest, nc_dict, False)
-    
-    print("\nMemory usage after loading data:")
-    uf.detailed_memory_analysis()
-
+    if l_parallel:
+        tasks = []
+        for initcond_combo in itertools.product(*vars_strs):
+            # Create a separate file_info for each combo to avoid mutation issues
+            finfo_target = file_info.copy()
+            finfo_target.update({
+                'sim_config': target_sim_config,
+                'vars_str': list(initcond_combo),
+                'date': target_nikki,
+                'mp_config': target_mp
+            })
+            task = dask.delayed(cl.load_cm1)(
+                finfo_target, var_interest, None, False, 
+                ss_hrs=steady_state_hrs, lwp_threshold=lwp_threshold
+            )
+            tasks.append(task)
+            
+        print("Computing target data in parallel...")
+        futures = client.compute(tasks)
+        progress(futures)
+        results = client.gather(futures)
+        
+        for r in tqdm(results, desc='merging target results'):
+            cl.deep_merge(nc_dict, r)
+        
+        # Shutdown client
+        client.close()
+    else:
+        for initcond_combo in tqdm(itertools.product(*vars_strs), desc='loading BIN data'):
+            file_info.update({'sim_config': target_sim_config,
+                            'vars_str': list(initcond_combo),
+                            'date': target_nikki,
+                            'mp_config': target_mp})
+            cl.load_cm1(file_info, var_interest, nc_dict, False, ss_hrs=steady_state_hrs, lwp_threshold=lwp_threshold)
 
 #     plot_dir = f"plots/{nikki}/{sim_config}/"
 #     if not os.path.exists(plot_dir):
@@ -160,9 +245,6 @@ def main():
     print("\nProcessing PPE data...")
     ncvars, dims = process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, nikki, sim_config, train_mp)
     
-    print("\nMemory usage after processing data:")
-    uf.detailed_memory_analysis()
-    
     # Set up global attributes
     global_attrs['thresholds_eff0'] = []
     var_constraints = []
@@ -187,8 +269,8 @@ def main():
         value_greater_0 = ncvars['ppe_' + ivar]['data'][ncvars['ppe_' + ivar]['data'] > 0]
         if 'V_M' in ivar:
             global_attrs['thresholds_eff0'].append(0.1)
-        # elif 'prate' in ivar:
-        #     global_attrs['thresholds_eff0'].append(1e-4)
+        elif 'prate' in ivar:
+            global_attrs['thresholds_eff0'].append(1e-3)
         else:
             global_attrs['thresholds_eff0'].append(np.nanpercentile(value_greater_0, 10))
     
@@ -235,8 +317,6 @@ def main():
     # Clear all large variables
     del ncvars, nc_file, dims, global_attrs, nc_dict
     
-    print("\nFinal memory usage:")
-    uf.detailed_memory_analysis()
     print("\nProcessing complete!")
 
 def create_nc_variables_structure(nc_dict, vars_vn, var_interest):
@@ -254,31 +334,25 @@ def create_nc_variables_structure(nc_dict, vars_vn, var_interest):
     for ivar in var_interest:
         var_units = cl.output_var_set[ivar]['var_unit']
 
-        if 'per5lvl' in ivar:
-            ncvars['ppe_' + ivar] = {
-                'dims': ('nppe', 'nlevel'),
-                'units': var_units,
-                'data': None
-            }
+        ncvars['ppe_' + ivar] = {
+            'dims': ('nppe',),
+            'units': var_units,
+            'data': None
+        }
+        ncvars['tgt_' + ivar] = {
+            'dims': ('ncase',),
+            'units': var_units,
+            'data': None
+        }
 
-            ncvars['tgt_' + ivar] = {
-                'dims': ('ncase', 'nlevel'),
-                'units': var_units,
-                'data': None
-            }
+        # assuming it's a time series var if 'last' is not in the name
+        if 'ss' not in ivar and 'max' not in ivar and 'onset' not in ivar:
+            ncvars['ppe_' + ivar]['dims'] += ('ntime',)
+            ncvars['tgt_' + ivar]['dims'] += ('ntime',)
 
-        else:
-            ncvars['ppe_' + ivar] = {
-                'dims': ('nppe',),
-                'units': var_units,
-                'data': None
-            }
-
-            ncvars['tgt_' + ivar] = {
-                'dims': ('ncase',),
-                'units': var_units,
-                'data': None
-            }
+        if 'lvl' in ivar:
+            ncvars['ppe_' + ivar]['dims'] += ('nlevel',)
+            ncvars['tgt_' + ivar]['dims'] += ('nlevel',)
 
     # Initialize case variables
     for var_vn in vars_vn:
@@ -298,10 +372,24 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, nikk
     for ippe, ppe in enumerate(tqdm(ppe_idx, desc='loading params')):
         param_df = pd.read_csv(f"{cl.output_dir}{nikki}/{sim_config}/{train_mp}/{ppe}/params.csv")
         if ippe == 0:  # First iteration
-            header = param_df.columns
-            param_names = np.array([a.strip() for a in header])
-            dims['nparams'] = len(header)
-            
+            # nparams = nc_dict['n_param_nevp'] + nc_dict['n_param_condevp'] + \
+            #           nc_dict['n_param_coal'] + nc_dict['n_param_sed']
+            if param_df.shape[0] > 5:
+                nparams = param_df.shape[0]
+                is_vertical = True
+            else:
+                nparams = param_df.shape[1]
+                is_vertical = False
+
+            dims['nparams'] = nparams
+
+            # is_vertical = nparams == param_df.shape[0]
+
+            if is_vertical:
+                param_names = param_df.iloc[:, 0].to_numpy()
+            else:
+                param_names = np.array([a.strip() for a in param_df.columns])
+
             # Initialize parameter arrays
             ncvars['param_names'] = {
                 'dims': ('nparams',),
@@ -314,8 +402,12 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, nikk
                 'data': np.zeros((len(ppe_idx), dims['nparams']))
             }
         
+
         # Store parameters
-        ncvars['params_PPE']['data'][ippe, :] = np.array(param_df)
+        if is_vertical:
+            ncvars['params_PPE']['data'][ippe, :] = np.array(param_df.iloc[:, 1].to_numpy())
+        else:
+            ncvars['params_PPE']['data'][ippe, :] = np.array(param_df)
         
         # Store initial conditions
         for var_vn in vars_vn:
@@ -337,16 +429,19 @@ def process_target_data(nc_dict, vars_vn, vars_strs, var_interest, ncvars, dims,
     ic_str = "".join(combo)
 
     for ivar in var_interest:
+        tgt_dims = (ncase,)
+        if 'ntime' in ncvars['tgt_' + ivar]['dims']:
+            dims['ntime'] = nc_dict[ic_str][target_mp][ivar]['value'].shape[0]
+            tgt_dims += (dims['ntime'],)
         if 'nlevel' in ncvars['tgt_' + ivar]['dims']:
-            if 'nlevel' not in dims:
-                dims['nlevel'] = nc_dict[ic_str][target_mp][ivar]['value'].shape[0]
-            ncvars['tgt_' + ivar]['data'] = np.zeros((ncase, dims['nlevel']))
-        else:
-            ncvars['tgt_' + ivar]['data'] = np.zeros(ncase)
+            dims['nlevel'] = nc_dict[ic_str][target_mp][ivar]['value'].shape[-1]
+            tgt_dims += (dims['nlevel'],)
+
+        ncvars['tgt_' + ivar]['data'] = np.zeros(tgt_dims)
+
         icase = 0
         for combo in itertools.product(*vars_strs):
             ic_str = "".join(combo)
-            # print(ivar, nc_dict[ic_str][target_mp][ivar]['value'])
             ncvars['tgt_' + ivar]['data'][icase] = nc_dict[ic_str][target_mp][ivar]['value']
             icase += 1
 
@@ -356,7 +451,7 @@ def process_target_data(nc_dict, vars_vn, vars_strs, var_interest, ncvars, dims,
         ic_str = "".join(combo)
         for i_init, var_vn in enumerate(vars_vn):
             ncvars['case_' + var_vn]['data'][icase] = nc_dict[ic_str][target_mp][var_vn]
-    
+
 def write_netcdf(nc_file, ncvars, dims, global_attrs):
     """Write netCDF data with memory cleanup"""
     # Create dimensions

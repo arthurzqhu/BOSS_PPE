@@ -215,7 +215,21 @@ def get_ppe_idx(file_info):
     ppe_idx = lp.sort_strings_by_number(ppe_idx)
     return ppe_idx
 
-def load_cm1(file_info, var_interest, nc_dict, continuous_ic, ss_hrs=2, ippe=0, lwp_threshold=0.01):
+def deep_merge(dict1, dict2):
+    """
+    Recursively merges dict2 into dict1.
+    """
+    for key, value in dict2.items():
+        if key in dict1 and isinstance(dict1[key], dict) and isinstance(value, dict):
+            deep_merge(dict1[key], value)
+        else:
+            dict1[key] = value
+    return dict1
+
+def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2, ippe=0, lwp_threshold=0.01):
+    import netCDF4 as nc
+    if nc_dict is None:
+        nc_dict = {}
     mp          = file_info['mp_config']
     vars_vn     = file_info['vars_vn']
     fdir        = file_info['dir']
@@ -338,6 +352,8 @@ def load_cm1(file_info, var_interest, nc_dict, continuous_ic, ss_hrs=2, ippe=0, 
         else:
             dst[vn]['value'] = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
         dst[vn]['units'] = output_var_set[vn]['var_unit']
+
+    return nc_dict
 
 def parse_var_meta(var_name):
     re_ss_prc  = re.search(r'ss_(\d+)th_prct', var_name)
