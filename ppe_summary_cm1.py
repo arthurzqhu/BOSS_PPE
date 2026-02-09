@@ -36,17 +36,17 @@ def main():
     """Main function to process PPE data with memory efficiency"""
     # Configuration
     l_parallel = False
-    l_testing = False
+    l_testing = True
     n_test = 3
     nikki = ''
     target_nikki = 'target'
-    # sim_config = 'NCE_joint_dycoms_1tncevp_lhs'
+    # sim_config = 'NCE_dycoms_aphase_lhs'
     # target_sim_config = 'NCE_dycoms'
     # steady_state_hrs = 2
-    # sim_config = 'fullmp_joint_dycoms_eo4_lhs'
+    # sim_config = 'fullmp_joint_dycoms_eo6_r1_lhs'
     # target_sim_config = 'fullmp_dycoms_t_onset_1e-4'
-    sim_config = 'NCE_rico_2xdx_lhs'
-    target_sim_config = 'NCE_rico_2xdx'
+    sim_config = 'fullmp_joint_rico_eo6_r1_lhs'
+    target_sim_config = 'fullmp_rico_t_onset_1e-4'
     steady_state_hrs = 4
     # sim_config = 'fullmp_joint_rico_eo4_lhs'
     # target_sim_config = 'fullmp_rico_t_onset_1e-4'
@@ -66,26 +66,21 @@ def main():
     vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
     var_interest = []
     var_interest += [
-            'M0_dmpath_ss_mean', 'M3_dmpath_ss_mean', 'M4_dmpath_ss_mean', 'M6_dmpath_ss_mean', 
-            'M0_path_ss_std', 'M3_path_ss_std', 'M4_path_ss_std', 'M6_path_ss_std', 
-            'M6_ss_99th_prctl', 'M6_ss_std', 'meanD_dm_03_ss_mean',
-            # 'M0_per5lvl', 'M3_per5lvl', 'M4_per5lvl', 'M6_per5lvl', 
-            # 'meanD_dm_03_10m_ss_mean', 'meanD_dm_03_100m_ss_mean', 'meanD_dm_03_250m_ss_mean', 'meanD_dm_03_500m_ss_mean',
-            # 'meanD_dm_36_10m_ss_mean', 'meanD_dm_36_100m_ss_mean', 'meanD_dm_36_250m_ss_mean', 'meanD_dm_36_500m_ss_mean',
-            # 'M0_10m_ss_mean', 'M3_10m_ss_mean', 'M4_10m_ss_mean', 'M6_10m_ss_mean', 
-            # 'M0_250m_ss_mean', 'M3_250m_ss_mean', 'M4_250m_ss_mean', 'M6_250m_ss_mean', 
-             # 'prate_dm_ss_mean', 'prate_ss_std', 'v_precip_onset', 'precip_max_dm',
-                     ] # domain-mean path
+                     'M0_dmpath_ss_mean', 'M3_dmpath_ss_mean', 'M4_dmpath_ss_mean', 'M6_dmpath_ss_mean', 
+                     'M0_path_ss_std', 'M3_path_ss_std', 'M4_path_ss_std', 'M6_path_ss_std', 
+                     'M6_ss_99th_prctl', 'meanD_dm_03_ss_mean',
+                     'prate_dm_ss_mean', 'prate_ss_std', 'v_precip_onset', 'precip_max_dm',
+                    ] # domain-mean path
     # var_interest += ['M0_path_ss_mean', 'M3_path_ss_mean', 'M4_path_ss_mean', 'M6_path_ss_mean',] # domain-mean path
     # var_interest += ['M0_per5lvl_ss_mean', 'M3_per5lvl_ss_mean', 'M4_per5lvl_ss_mean', 'M6_per5lvl_ss_mean']
     # var_interest += ['sfM0_per5lvl_ss_mean', 'sfM3_per5lvl_ss_mean', 'sfM4_per5lvl_ss_mean', 'sfM6_per5lvl_ss_mean'] # domain-mean fluxes
     var_interest += [
             # 'sfM0_per5lvl', 'sfM3_per5lvl', 'sfM4_per5lvl', 'sfM6_per5lvl',
-            # 'sfM0_dm_10m_ss_mean',  'sfM3_dm_10m_ss_mean',  'sfM4_dm_10m_ss_mean',  'sfM6_dm_10m_ss_mean',
-            # 'sfM0_dm_100m_ss_mean', 'sfM3_dm_100m_ss_mean', 'sfM4_dm_100m_ss_mean', 'sfM6_dm_100m_ss_mean',
-            # 'sfM0_dm_250m_ss_mean', 'sfM3_dm_250m_ss_mean', 'sfM4_dm_250m_ss_mean', 'sfM6_dm_250m_ss_mean',
+            'sfM0_dm_10m_ss_mean',  'sfM3_dm_10m_ss_mean',  'sfM4_dm_10m_ss_mean',  'sfM6_dm_10m_ss_mean',
+            'sfM0_dm_100m_ss_mean', 'sfM3_dm_100m_ss_mean', 'sfM4_dm_100m_ss_mean', 'sfM6_dm_100m_ss_mean',
+            'sfM0_dm_250m_ss_mean', 'sfM3_dm_250m_ss_mean', 'sfM4_dm_250m_ss_mean', 'sfM6_dm_250m_ss_mean',
             # 'sfM0_dm_500m_ss_mean', 'sfM3_dm_500m_ss_mean', 'sfM4_dm_500m_ss_mean', 'sfM6_dm_500m_ss_mean',
-                     ]
+]
 
     # Process data
     
@@ -123,10 +118,10 @@ def main():
         
         # Using a reasonable number of workers (e.g., 16) even on a full compute node 
         # is usually safer and faster for I/O bound NetCDF tasks.
-        client = Client(n_workers=16, threads_per_worker=1, processes=True, local_directory=dask_scratch)
+        client = Client(n_workers=32, threads_per_worker=1, processes=True, local_directory=dask_scratch)
         print(f"Dask dashboard available at: {client.dashboard_link}")
         print(f"Using 16 Processes. Scratch: {dask_scratch}")
-        
+
         tasks = []
         for ippe in ppe_idx:
             # We pass None as nc_dict so it returns a new one for each member
@@ -135,12 +130,12 @@ def main():
                 ss_hrs=steady_state_hrs, ippe=ippe, lwp_threshold=lwp_threshold
             )
             tasks.append(task)
-        
+
         print("Computing PPE data in parallel...")
         futures = client.compute(tasks)
         progress(futures)
         results = client.gather(futures)
-        
+
         for r in tqdm(results, desc='merging PPE results'):
             cl.deep_merge(nc_dict, r)
     else:
@@ -165,7 +160,7 @@ def main():
                 ss_hrs=steady_state_hrs, lwp_threshold=lwp_threshold
             )
             tasks.append(task)
-            
+
         print("Computing target data in parallel...")
         futures = client.compute(tasks)
         progress(futures)
@@ -270,7 +265,7 @@ def main():
         if 'V_M' in ivar:
             global_attrs['thresholds_eff0'].append(0.1)
         elif 'prate' in ivar:
-            global_attrs['thresholds_eff0'].append(1e-3)
+            global_attrs['thresholds_eff0'].append(1e-4)
         else:
             global_attrs['thresholds_eff0'].append(np.nanpercentile(value_greater_0, 10))
     

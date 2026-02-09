@@ -194,7 +194,9 @@ output_var_set = {
                   'sfM3_750m_ss_std': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Steady State Sedflux M3 750m'},
                   'sfM4_750m_ss_std': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 750m'},
                   'sfM6_750m_ss_std': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 750m'},
-                  'v_precip_onset':{'var_source': 'prate', 'var_unit': '1/hr', 'longname': 'Rain Onset Speed'},
+                  'v_precip_onset':{'var_source': 't_precip_onset', 'var_unit': '1/hr', 'longname': 'Rain Onset Speed'},
+                  't_precip_onset':{'var_source': 't_precip_onset', 'var_unit': 'hr', 'longname': 'Rain Onset Speed'},
+                  # 'v_precip_onset':{'var_source': 'prate', 'var_unit': '1/hr', 'longname': 'Rain Onset Speed'},
                   'precip_max_dm':{'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Peak Rain Rate'},
                   'meanD_dm_03_10m_ss_mean':  {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam 10m'},
                   'meanD_dm_03_100m_ss_mean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam 100m'},
@@ -227,7 +229,6 @@ def deep_merge(dict1, dict2):
     return dict1
 
 def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2, ippe=0, lwp_threshold=0.01):
-    import netCDF4 as nc
     if nc_dict is None:
         nc_dict = {}
     mp          = file_info['mp_config']
@@ -304,12 +305,6 @@ def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2
     var_meta = {vn: parse_var_meta(vn) for vn in var_interest}
     raw_collector = {vn: [] for vn in var_interest}
     
-    # Special trackers for v_precip_onset
-    precip_onset_threshold = 1e-4 / 3600
-    onset_t_tmp = {vn: 28800. for vn in var_interest if 'v_precip_onset' in vn}
-    onset_found_first = {vn: False for vn in var_interest if 'v_precip_onset' in vn}
-    onset_finished = {vn: False for vn in var_interest if 'v_precip_onset' in vn}
-
     # Main single-pass loop
     for ifp, fp in enumerate(file_paths):
         with nc.Dataset(fp, 'r') as ds:
@@ -324,18 +319,6 @@ def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2
             for vn in var_interest:
                 meta = var_meta[vn]
                 
-                # Precipitation onset logic
-                if 'v_precip_onset' in vn and not onset_finished[vn]:
-                    prate = ds.variables[output_var_set[vn]['var_source']][:]
-                    prate[..., lwp <= lwp_threshold] = np.nan
-                    mean_prate = np.nanmean(prate)
-                    if mean_prate > precip_onset_threshold:
-                        if not onset_found_first[vn]:
-                            onset_found_first[vn] = True
-                        else:
-                            onset_t_tmp[vn] = t_val
-                            onset_finished[vn] = True
-                
                 # Normal variable extraction
                 is_ss_file = (ifp >= len(file_paths) - n_needed)
                 if not meta['is_ss'] or is_ss_file:
@@ -347,10 +330,7 @@ def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2
         dst = nc_dict[ic_str][mp] if ippe == 0 else nc_dict[ic_str][mp][ippe]
         dst.setdefault(vn, {})
         
-        if 'v_precip_onset' in vn:
-            dst[vn]['value'] = 3600.0 / onset_t_tmp[vn]
-        else:
-            dst[vn]['value'] = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
+        dst[vn]['value'] = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
         dst[vn]['units'] = output_var_set[vn]['var_unit']
 
     return nc_dict
@@ -381,7 +361,8 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, lwp_threshold):
         else:
             # Mask based on column LWP
             mask = lwp <= lwp_threshold
-            data[..., mask] = np.nan
+            if data.ndim >= 2:
+                data[..., mask] = np.nan
         return data
 
     if isinstance(vsource, list):
@@ -430,6 +411,10 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, lwp_threshold):
         res = data[0, :, yidx, :] * scale
     elif 'prate_dm' in var_name or 'precip_max_dm' in var_name:
         res = np.nanmean(data) * scale
+    elif 'v_precip_onset' in var_name:
+        res = 3600./data
+    elif 't_precip_onset' in var_name:
+        res = data/3600.
     else:
         res = data[0, ...] * scale
 
@@ -455,18 +440,22 @@ def aggregate_timeseries(var_name, ts, meta):
     if meta['is_ss_prc']:
         valid = arr[~np.isnan(arr) & (arr > 0)]
         return np.percentile(valid, meta['nth_prctl']) if valid.size > 0 else 0.0
+
+    if 'v_precip_onset' in var_name:
+        return arr.max()
+
+    if 't_precip_onset' in var_name:
+        return arr.min()
+    
     
     # Temporal average
     res = np.nanmean(arr, axis=0)
     if meta['is_dm']:
         res = np.nanmean(res)
-    
-    if 'precip_max_dm' in var_name:
-        return np.nanmax(arr)
 
     if 'precip_max_dm' in var_name:
         return np.nanmax(arr)
-    
+
     if '_runmean' in var_name:
         return np.nanmean(arr)
         
