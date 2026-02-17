@@ -299,7 +299,7 @@ def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2
     dz = zf[1:] - zf[:-1]
     z = (zf[1:] + zf[:-1])/2
 
-    n_needed = int(np.ceil((ss_hrs * 3600) / dt)) if np.isfinite(dt) and dt > 0 else 1
+    n_needed = int(np.ceil((ss_hrs * 3600) / dt) + 1) if np.isfinite(dt) and dt > 0 else 1
 
     # Pre-parse meta and setup collectors
     var_meta = {vn: parse_var_meta(vn) for vn in var_interest}
