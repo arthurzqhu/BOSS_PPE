@@ -13,10 +13,13 @@ M3toQ = np.pi/6*1e3
 QtoM3 = 1/M3toQ
 
 def calc_rho(ds):
-    prs = ds.variables['prs'][...]
-    th  = ds.variables['th'][...]
-    qv  = ds.variables['qv'][...]
-    return prs / (287.04 * th * (prs / 1e5)**(287.04 / 1004) * (1 + 0.61 * qv))
+    if all(var in ds.variables for var in ['prs', 'th', 'qv']):
+        prs = ds.variables['prs'][...]
+        th  = ds.variables['th'][...]
+        qv  = ds.variables['qv'][...]
+        return prs / (287.04 * th * (prs / 1e5)**(287.04 / 1004) * (1 + 0.61 * qv))
+    else:
+        return 1.15
 
 def calc_lwp(ds, dz, rho=None):
     if rho is None:
@@ -209,13 +212,53 @@ output_var_set = {
                   'meanD_dm_03_ss_mean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam'},
                   }
 
-def get_ppe_idx(file_info):
+def get_pert_idx(file_info):
     fdate = file_info['date']
     fsim_config = file_info['sim_config']
     mp = file_info['mp_config']
-    ppe_idx = os.listdir(f"{output_dir}{fdate}/{fsim_config}/{mp}")
-    ppe_idx = lp.sort_strings_by_number(ppe_idx)
-    return ppe_idx
+    fdir = file_info.get('dir', output_dir)
+    l_pert = file_info.get('l_pert', False)
+    
+    if l_pert and 'vars_str' in file_info:
+        vars_dir = "/".join([istr for istr in file_info['vars_str']])
+        base_path_template = f"{fdir}{fdate}/{{config}}/{vars_dir}/{mp}"
+    else:
+        base_path_template = f"{fdir}{fdate}/{{config}}/{mp}"
+    
+    if isinstance(fsim_config, list):
+        pert_idx_list = []
+        global_id_counter = 0
+        for config in fsim_config:
+            search_dir = base_path_template.format(config=config)
+            if not os.path.exists(search_dir):
+                continue
+            member_dirs = os.listdir(search_dir)
+            member_dirs = lp.sort_strings_by_number(member_dirs)
+            for member in member_dirs:
+                pert_idx_list.append({
+                    'sim_config': config,
+                    'member': member,
+                    'global_id': global_id_counter
+                })
+                global_id_counter += 1
+        return pert_idx_list
+    else:
+        # Legacy/Single config behavior: conform to new list-of-dicts structure for consistency
+        search_dir = base_path_template.format(config=fsim_config)
+        if not os.path.exists(search_dir):
+            print(base_path_template)
+            raise FileNotFoundError(f"Directory {search_dir} not found")
+        pert_idx = os.listdir(search_dir)
+        pert_idx = lp.sort_strings_by_number(pert_idx)
+        result = []
+        for i, m in enumerate(pert_idx):
+            global_id = int(m) if m.isdigit() else i
+            result.append({
+                'sim_config': fsim_config,
+                'member': m,
+                'global_id': global_id
+            })
+        return result
 
 def deep_merge(dict1, dict2):
     """
@@ -228,23 +271,41 @@ def deep_merge(dict1, dict2):
             dict1[key] = value
     return dict1
 
-def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2, ippe=0, lwp_threshold=0.01):
+def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, ipert=0, lwp_threshold=0.02):
     if nc_dict is None:
         nc_dict = {}
+        
+    # Unpack ipert if it's a dictionary (new structure)
+    if isinstance(ipert, dict):
+        current_config = ipert['sim_config']
+        member = ipert['member']
+        global_id = ipert['global_id']
+        is_dict_ipert = True
+    else:
+        current_config = file_info['sim_config']
+        member = str(ipert)
+        global_id = ipert
+        is_dict_ipert = False
+
     mp          = file_info['mp_config']
     vars_vn     = file_info['vars_vn']
     fdir        = file_info['dir']
     fdate       = file_info['date']
-    fsim_config = file_info['sim_config']
+    l_pert      = file_info.get('l_pert', False)
+    fsim_config = current_config 
+    
     fn_prefix, fn_suffix = "cm1out_0", ".nc"
 
     if continuous_ic:
-        file_pattern = f"{fdir}{fdate}/{fsim_config}/{mp}/{ippe}/{fn_prefix}*{fn_suffix}"
+        file_pattern = f"{fdir}{fdate}/{fsim_config}/{mp}/{member}/{fn_prefix}*{fn_suffix}"
         ic_str = 'cic'
     else:
         ic_str = "".join(file_info['vars_str'])
         vars_dir = "/".join([istr for istr in file_info['vars_str']])
-        file_pattern = f"{fdir}{fdate}/{fsim_config}/{vars_dir}/{mp}/{fn_prefix}*{fn_suffix}"
+        if l_pert:
+            file_pattern = f"{fdir}{fdate}/{fsim_config}/{vars_dir}/{mp}/{member}/{fn_prefix}*{fn_suffix}"
+        else:
+            file_pattern = f"{fdir}{fdate}/{fsim_config}/{vars_dir}/{mp}/{fn_prefix}*{fn_suffix}"
 
     file_paths = sorted(glob(file_pattern), key=last_number_key)
     if not file_paths:
@@ -268,13 +329,13 @@ def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2
         nc_dict.setdefault(ic_str, {})
         nc_dict[ic_str].setdefault(mp, {})
         nc_dict['init_var'] = vars_vn
-        if ippe > 0:
-            nc_dict[ic_str][mp].setdefault(ippe, {})
+        if continuous_ic or l_pert:
+            nc_dict[ic_str][mp].setdefault(global_id, {})
 
         # vn attributes (variable names)
         for vn in vars_vn:
             nc_dict[vn + '_units'] = ds0.getncattr(vn + '_units')
-            keydst = nc_dict[ic_str][mp] if ippe == 0 else nc_dict[ic_str][mp][ippe]
+            keydst = nc_dict[ic_str][mp][global_id] if (continuous_ic or l_pert) else nc_dict[ic_str][mp]
             keydst[vn] = ds0.getncattr(vn)
         
         # coords
@@ -327,7 +388,7 @@ def load_cm1(file_info, var_interest, nc_dict=None, continuous_ic=True, ss_hrs=2
 
     # Final aggregation and assignment
     for vn in var_interest:
-        dst = nc_dict[ic_str][mp] if ippe == 0 else nc_dict[ic_str][mp][ippe]
+        dst = nc_dict[ic_str][mp][global_id] if (continuous_ic or l_pert) else nc_dict[ic_str][mp]
         dst.setdefault(vn, {})
         
         dst[vn]['value'] = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
