@@ -3,13 +3,12 @@ import os
 import gc
 import sys
 import keras
-import tensorflow as tf
 
 class MemoryCleanupCallback(keras.callbacks.Callback):
     """Callback to clean up memory after each trial"""
     def on_train_end(self, logs=None):
         # Clear Keras session to release memory
-        tf.keras.backend.clear_session()
+        keras.backend.clear_session()
         # Force garbage collection
         gc.collect()
 

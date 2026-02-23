@@ -1,14 +1,12 @@
 import tensorflow as tf
-from tensorflow import keras
-import keras_tuner as kt
 import keras
-from tensorflow.keras import layers
+import keras_tuner as kt
+from keras import layers
 import pandas as pd
 import matplotlib.pyplot as plt
-# import tensorflow.keras.backend as K
-from tensorflow.keras.losses import Loss
+from keras.losses import Loss
 import numpy as np
-from keras import ops as K # for some reason, this is needed for the StochasticLatent layer
+from keras import ops as K
 
 SQRT2   = tf.sqrt(tf.constant(2., tf.float32))
 SQRT_PI = tf.sqrt(tf.constant(np.pi, tf.float32))
@@ -47,7 +45,7 @@ def gaussian_nll(y_true, y_pred):
     logvar = tf.clip_by_value(logvar, -4.0, 10.0)  # exp(-4) ≈ 0.018, exp(10) ≈ 22026
     nll = logvar + tf.square(y_true - mean) / (tf.exp(logvar) + 1e-6)
     masked_nll = nll * mask
-    return 0.5 * tf.reduce_sum(masked_nll) / (tf.reduce_sum(mask) + tf.keras.backend.epsilon())
+    return 0.5 * tf.reduce_sum(masked_nll) / (tf.reduce_sum(mask) + keras.backend.epsilon())
 
 def gaussian_nll_loss_factory(n_obs, mask_min=-999.0, min_sigma=1e-6):
     """
@@ -575,7 +573,7 @@ def masked_mae(threshold=-999):
         mask = tf.cast(tf.greater(y_true, threshold), tf.float32)
         abs_err = tf.abs(y_true - y_pred) * mask
         # sum over all elements, then divide by total valid count
-        return tf.reduce_sum(abs_err) / (tf.reduce_sum(mask) + tf.keras.backend.epsilon())
+        return tf.reduce_sum(abs_err) / (tf.reduce_sum(mask) + keras.backend.epsilon())
     return _masked_mae
     
 

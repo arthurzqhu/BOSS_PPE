@@ -45,26 +45,32 @@ elif 'Linux' in platform.platform():
 
 # TODO: refactor this dictionary into a class ...
 output_var_set = {
-                  'M0_path': {'var_source': 'qc0', 'var_unit': '1/$m^2$', 'longname': 'LNP'}, 
-                  'M3_path': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'LWP'}, 
-                  'M4_path': {'var_source': 'qc4', 'var_unit': '$m^4$/$m^2$', 'scale': 1e-4**4, 'longname': 'M4 Path'},
-                  'M5_path': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'M5 Path'},
-                  'M6_path': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'M6 Path'},
-                  'M9_path': {'var_source': 'qc9', 'var_unit': '$m^9$/$m^2$', 'scale': 1e-4**9, 'longname': 'M9 Path'},
-                  'M0_dmprof': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Domain-Mean LNP'},
-                  'M3_dmprof': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Domain-Mean LWC'},
-                  'M4_dmprof': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Domain-Mean M4'},
-                  'M5_dmprof': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Domain-Mean M5'},
-                  'M6_dmprof': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Domain-Mean M6'},
-                  'M9_dmprof': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Domain-Mean M9'},
-                  'M0_dmpath': {'var_source': 'qc0', 'var_unit': '1/$m^2$', 'longname': 'Domain-Mean LNP'}, 
-                  'M3_dmpath': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'Domain-Mean LWP'}, 
-                  'M4_dmpath': {'var_source': 'qc4', 'var_unit': '$m^4$/$m^2$', 'scale': 1e-4**4, 'longname': 'Domain-Mean M4 Path'},
-                  'M5_dmpath': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'Domain-Mean M5 Path'},
-                  'M6_dmpath': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'Domain-Mean M6 Path'},
-                  'M9_dmpath': {'var_source': 'qc9', 'var_unit': '$m^9$/$m^2$', 'scale': 1e-4**9, 'longname': 'Domain-Mean M9 Path'},
+                  'M0_path': {'var_source': 'qc0', 'var_unit': '1/m$^2$', 'longname': 'LNP'}, 
+                  'M3_path': {'var_source': 'qc3', 'var_unit': 'kg/m$^2$', 'scale': M3toQ, 'longname': 'LWP'}, 
+                  'M4_path': {'var_source': 'qc4', 'var_unit': 'm$^4$/m$^2$', 'scale': 1e-4**4, 'longname': 'M4 Path'},
+                  'M5_path': {'var_source': 'qc5', 'var_unit': 'm$^5$/m$^2$', 'scale': 1e-4**5, 'longname': 'M5 Path'},
+                  'M6_path': {'var_source': 'qc6', 'var_unit': 'm$^6$/m$^2$', 'scale': 1e-4**6, 'longname': 'M6 Path'},
+                  'M9_path': {'var_source': 'qc9', 'var_unit': 'm$^9$/m$^2$', 'scale': 1e-4**9, 'longname': 'M9 Path'},
+                  'M0_dmprof': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Domain-Mean LNC'},
+                  'M3_dmprof': {'var_source': 'qc3', 'var_unit': 'g/kg', 'scale': M3toQ*1e3, 'longname': 'Domain-Mean LWC'},
+                  'M4_dmprof': {'var_source': 'qc4', 'var_unit': 'm$^4$/kg', 'scale': 1e-4**4, 'longname': 'Domain-Mean M4'},
+                  'M5_dmprof': {'var_source': 'qc5', 'var_unit': 'm$^5$/kg', 'scale': 1e-4**5, 'longname': 'Domain-Mean M5'},
+                  'M6_dmprof': {'var_source': 'qc6', 'var_unit': 'm$^6$/kg', 'scale': 1e-4**6, 'longname': 'Domain-Mean M6'},
+                  'M9_dmprof': {'var_source': 'qc9', 'var_unit': 'm$^9$/kg', 'scale': 1e-4**9, 'longname': 'Domain-Mean M9'},
+                  'M0_dmpath': {'var_source': 'qc0', 'var_unit': '1/m$^2$', 'longname': 'Domain-Mean LNP'}, 
+                  'M3_dmpath': {'var_source': 'qc3', 'var_unit': 'kg/m$^2$', 'scale': M3toQ, 'longname': 'Domain-Mean LWP'}, 
+                  'M4_dmpath': {'var_source': 'qc4', 'var_unit': 'm$^4$/m$^2$', 'scale': 1e-4**4, 'longname': 'Domain-Mean M4 Path'},
+                  'M5_dmpath': {'var_source': 'qc5', 'var_unit': 'm$^5$/m$^2$', 'scale': 1e-4**5, 'longname': 'Domain-Mean M5 Path'},
+                  'M6_dmpath': {'var_source': 'qc6', 'var_unit': 'm$^6$/m$^2$', 'scale': 1e-4**6, 'longname': 'Domain-Mean M6 Path'},
+                  'M9_dmpath': {'var_source': 'qc9', 'var_unit': 'm$^9$/m$^2$', 'scale': 1e-4**9, 'longname': 'Domain-Mean M9 Path'},
+                  'M0_curtain_slice': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNC'}, 
+                  'M3_curtain_slice': {'var_source': 'qc3', 'var_unit': 'g/kg', 'scale': M3toQ*1e3, 'longname': 'LWC'}, 
+                  'M4_curtain_slice': {'var_source': 'qc4', 'var_unit': 'm$^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
+                  'M5_curtain_slice': {'var_source': 'qc5', 'var_unit': 'm$^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
+                  'M6_curtain_slice': {'var_source': 'qc6', 'var_unit': 'm$^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
+                  'M9_curtain_slice': {'var_source': 'qc9', 'var_unit': 'm$^9$/kg', 'scale': 1e-4**9, 'longname': 'M9'},
                   'M0_curtain_mean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNC'}, 
-                  'M3_curtain_mean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
+                  'M3_curtain_mean': {'var_source': 'qc3', 'var_unit': 'g/kg', 'scale': M3toQ*1e3, 'longname': 'LWC'}, 
                   'M4_curtain_mean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
                   'M5_curtain_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
                   'M6_curtain_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
@@ -99,8 +105,8 @@ output_var_set = {
                   'M5_250m_ss_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
                   'M6_250m_ss_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
                   'M9_250m_ss_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
-                  'M0': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNP'}, 
-                  'M3': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
+                  'LNC': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNC'}, 
+                  'LWC': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
                   'M4': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
                   'M5': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
                   'M6': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
@@ -130,7 +136,7 @@ output_var_set = {
                   'prate_ss_10th_prct': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Steady State 10th percentile Rain Rate'},
                   'prate_ss_90th_prct': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Steady State 90th percentile Rain Rate'},
                   'sedflux_m0': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Sedflux M0'},
-                  'sedflux_m3': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Sedflux M3'},
+                  'sedflux_m3': {'var_source': 'sedflux_M3', 'var_unit': 'mm/hr', 'scale': M3toQ*3600, 'longname': 'Rain flux'},
                   'sedflux_m4': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Sedflux M4'},
                   'sedflux_m6': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Sedflux M6'},
                   'sfM0_ss_mean': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Steady State Sedflux M0'},
@@ -198,8 +204,7 @@ output_var_set = {
                   'sfM4_750m_ss_std': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Steady State Sedflux M4 750m'},
                   'sfM6_750m_ss_std': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Steady State Sedflux M6 750m'},
                   'v_precip_onset':{'var_source': 't_precip_onset', 'var_unit': '1/hr', 'longname': 'Rain Onset Speed'},
-                  't_precip_onset':{'var_source': 't_precip_onset', 'var_unit': 'hr', 'longname': 'Rain Onset Speed'},
-                  # 'v_precip_onset':{'var_source': 'prate', 'var_unit': '1/hr', 'longname': 'Rain Onset Speed'},
+                  't_precip_onset':{'var_source': 't_precip_onset', 'var_unit': 'hr', 'longname': 'Rain Onset Time'},
                   'precip_max_dm':{'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Peak Rain Rate'},
                   'meanD_dm_03_10m_ss_mean':  {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam 10m'},
                   'meanD_dm_03_100m_ss_mean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam 100m'},
@@ -210,6 +215,15 @@ output_var_set = {
                   'meanD_dm_36_250m_ss_mean': {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Steady State M6-meandiam 250m'},
                   'meanD_dm_36_500m_ss_mean': {'var_source': ['qc3', 'qc6'], 'var_unit': 'μm', 'longname': 'Steady State M6-meandiam 500m'},
                   'meanD_dm_03_ss_mean': {'var_source': ['qc0', 'qc3'], 'var_unit': 'μm', 'longname': 'Steady State mass-meandiam'},
+                  'tempK': {'var_source': ['th', 'prs'], 'var_unit': 'K', 'longname': 'Temperature (K)'},
+                  'RH': {'var_source': ['th', 'prs', 'qv'], 'var_unit': '%', 'longname': 'Relative Humidity (%)'},
+                  'pressure': {'var_source': 'prs', 'var_unit': 'Pa', 'longname': 'Pressure (Pa)'},
+                  'u_10m': {'var_source': 'uinterp', 'var_unit': 'm/s', 'longname': '10m Wind Speed (m/s)'},
+                  'v_10m': {'var_source': 'vinterp', 'var_unit': 'm/s', 'longname': '10m Wind Speed (m/s)'},
+                  'v_hori': {'var_source': ['uinterp', 'vinterp'], 'var_unit': 'm/s', 'longname': 'Horizontal Wind Speed (m/s)'},
+                  'w': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind Speed (m/s)'},
+                  'prate': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Rain Rate (mm/hr)'},
+                  'reff': {'var_source': 'reff', 'var_unit': 'μm', 'scale': 1e6, 'longname': 'Effective radius (μm)'},
                   }
 
 def get_pert_idx(file_info):
@@ -326,27 +340,28 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
 
     # open first file to grab coords/attrs, then close it
     with nc.Dataset(file_paths[0], 'r') as ds0:
-        nc_dict.setdefault(ic_str, {})
-        nc_dict[ic_str].setdefault(mp, {})
+        nc_dict.setdefault(fsim_config, {})
+        nc_dict[fsim_config].setdefault(mp, {})
+        nc_dict[fsim_config][mp].setdefault(ic_str, {})
         nc_dict['init_var'] = vars_vn
         if continuous_ic or l_pert:
-            nc_dict[ic_str][mp].setdefault(global_id, {})
+            nc_dict[fsim_config][mp][ic_str].setdefault(global_id, {})
 
         # vn attributes (variable names)
         for vn in vars_vn:
             nc_dict[vn + '_units'] = ds0.getncattr(vn + '_units')
-            keydst = nc_dict[ic_str][mp][global_id] if (continuous_ic or l_pert) else nc_dict[ic_str][mp]
+            keydst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
             keydst[vn] = ds0.getncattr(vn)
         
         # coords
-        if 'z' not in nc_dict: nc_dict['z'] = np.asarray(ds0['zh'][:]).copy()
-        if 'x' not in nc_dict: nc_dict['x'] = np.asarray(ds0['xh'][:]).copy()
-        if 'y' not in nc_dict: nc_dict['y'] = np.asarray(ds0['yh'][:]).copy()
+        if 'z' not in nc_dict: nc_dict['z'] = np.round(ds0['zh'][:] * 1e3, decimals=1)
+        if 'x' not in nc_dict: nc_dict['x'] = np.round(ds0['xh'][:] * 1e3, decimals=1)
+        if 'y' not in nc_dict: nc_dict['y'] = np.round(ds0['yh'][:] * 1e3, decimals=1)
         
         zf = np.asarray(ds0['zf'][:]).copy() * 1e3
 
         # optional BOSS attrs
-        if 'BOSS' in mp:
+        if 'SLC-BOSS' in mp:
             nc_dict['n_param_nevp']    = ds0.getncattr('boss_n_param_nevp')
             nc_dict['n_param_condevp'] = ds0.getncattr('boss_n_param_condevp')
             nc_dict['n_param_coal']    = ds0.getncattr('boss_n_param_coal')
@@ -365,7 +380,7 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     # Pre-parse meta and setup collectors
     var_meta = {vn: parse_var_meta(vn) for vn in var_interest}
     raw_collector = {vn: [] for vn in var_interest}
-    
+
     # Main single-pass loop
     for ifp, fp in enumerate(file_paths):
         with nc.Dataset(fp, 'r') as ds:
@@ -388,7 +403,7 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
 
     # Final aggregation and assignment
     for vn in var_interest:
-        dst = nc_dict[ic_str][mp][global_id] if (continuous_ic or l_pert) else nc_dict[ic_str][mp]
+        dst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
         dst.setdefault(vn, {})
         
         dst[vn]['value'] = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
@@ -428,56 +443,65 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, lwp_threshold):
 
     if isinstance(vsource, list):
         data = [get_masked_data(vn) for vn in vsource]
+        raw_data = [ds.variables[vn][...] for vn in vsource]
     else:
         data = get_masked_data(vsource)
+        raw_data = ds.variables[vsource][...]
 
     # Reduction
-    if 'path' in var_name:
+    if 'prof' in var_name:
+        res = np.nanmean(data, axis=(0, 2, 3)) * scale
+    elif 'path' in var_name:
         dz_b = dz[None, :, None, None]
-        res = np.nansum(data * dz_b * rho, axis=(0, 1)) * scale
+        path = np.nansum(data * dz_b * rho, axis=1) # (time, y, x)
         # Ensure columns that are all NaN stay NaN instead of 0.0
-        if np.all(np.isnan(data), axis=(0, 1)).any():
-            res[np.all(np.isnan(data), axis=(0, 1))] = np.nan
+        if np.all(np.isnan(data), axis=1).any():
+            path[np.all(np.isnan(data), axis=1)] = np.nan
+        res = path * scale # (time,)
     elif 'per5lvl' in var_name:
         res = np.nanmean(data[:, :55:5, :, :], axis=(0, 2, 3)) * scale
     elif 'per10lvl' in var_name:
         res = np.nanmean(data[:, :55:10, :, :], axis=(0, 2, 3)) * scale
     elif 'meanD_dm' in var_name:
         # Tuple for aggregate ratio calculation
-        h_match = re.search(r'_(\d+(?:\.\d+)?)m_', var_name)
+        h_match = re.search(r'_(\d+(?:\.\d+)?)m', var_name)
         if bool(h_match):
             target_h = float(h_match.group(1))
             h_idx = np.argmin(np.abs(z - target_h))
             res = (np.nanmean(data[1][:, h_idx, :, :]), np.nanmean(data[0][:, h_idx, :, :]))
         else:
             res = (np.nanmean(data[1]), np.nanmean(data[0]))
-    elif re.search(r'_(\d+(?:\.\d+)?)m_', var_name):
-        h_match = re.search(r'_(\d+(?:\.\d+)?)m_', var_name)
+    elif re.search(r'_(\d+(?:\.\d+)?)m', var_name):
+        h_match = re.search(r'_(\d+(?:\.\d+)?)m', var_name)
         target_h = float(h_match.group(1))
         h_idx = np.argmin(np.abs(z - target_h))
-        res = np.nanmean(data[:, h_idx, :, :]) * scale
-    elif '_dmprof' in var_name:
-        res = np.nanmean(data, axis=(0, 2, 3)) * scale
-    elif '_dmpath' in var_name:
-        dz_b = dz[None, :, None, None]
-        path = np.nansum(data * dz_b * rho, axis=1) # (time, y, x)
-        # Ensure columns that are all NaN stay NaN instead of 0.0
-        if np.all(np.isnan(data), axis=1).any():
-            path[np.all(np.isnan(data), axis=1)] = np.nan
-        res = np.nanmean(path, axis=(1, 2)) * scale # (time,)
+        res = data[:, h_idx, :, :] * scale
     elif '_curtain_mean' in var_name:
         res = np.nanmean(data, axis=(0, 2)) * scale
     elif '_curtain_slice' in var_name:
         yidx = data.shape[2] // 2
         res = data[0, :, yidx, :] * scale
-    elif 'prate_dm' in var_name or 'precip_max_dm' in var_name:
-        res = np.nanmean(data) * scale
+    # elif 'prate_dm' in var_name or 'precip_max_dm' in var_name:
+    #     res = np.nanmean(data) * scale
+    elif 'tempK' in var_name:
+        res = get_tempK_from_theta_p(raw_data[0], raw_data[1])
+    elif 'v_hori' in var_name:
+        res = np.sqrt(raw_data[0]**2 + raw_data[1]**2)
+    elif 'RH' in var_name:
+        theta = raw_data[0]
+        press = raw_data[1]
+        qv    = raw_data[2]
+        tempK = get_tempK_from_theta_p(theta, press)
+        eps = 0.622
+        vap_prs = (qv * press) / (eps + qv * (1 - eps))
+        vap_prs_sat = saturation_vapor_pressure_liquid(tempK)
+        res = vap_prs / vap_prs_sat * 100
     elif 'v_precip_onset' in var_name:
         res = 3600./data
     elif 't_precip_onset' in var_name:
         res = data/3600.
     else:
-        res = data[0, ...] * scale
+        res = raw_data[0, ...] * scale
 
     return res
 
@@ -492,15 +516,12 @@ def aggregate_timeseries(var_name, ts, meta):
     
     arr = np.squeeze(np.stack(ts))
     
-    if 'per5lvl' in var_name or 'per10lvl' in var_name or '_dmprof' in var_name:
-        return np.nanmean(arr, axis=0) if arr.ndim > 1 else arr # Profile average
-    
     if meta['is_ss_std']:
-        return np.nanmean(np.nanstd(arr, axis=(1, 2))) if arr.ndim >= 3 else np.nanstd(arr)
+        arr = np.nanstd(arr, axis=(1, 2))
     
     if meta['is_ss_prc']:
         valid = arr[~np.isnan(arr) & (arr > 0)]
-        return np.percentile(valid, meta['nth_prctl']) if valid.size > 0 else 0.0
+        arr = np.percentile(valid, meta['nth_prctl']) if valid.size > 0 else 0.0
 
     if 'v_precip_onset' in var_name:
         return arr.max()
@@ -508,17 +529,20 @@ def aggregate_timeseries(var_name, ts, meta):
     if 't_precip_onset' in var_name:
         return arr.min()
     
-    
-    # Temporal average
-    res = np.nanmean(arr, axis=0)
     if meta['is_dm']:
-        res = np.nanmean(res)
+        arr = np.nanmean(arr, axis=tuple(range(1, arr.ndim)))
+
+    # Temporal average
+    if meta['is_ss']:
+        res = np.nanmean(arr, axis=0)
+    else:
+        res = arr
 
     if 'precip_max_dm' in var_name:
-        return np.nanmax(arr)
+        return np.nanmax(res)
 
     if '_runmean' in var_name:
-        return np.nanmean(arr)
+        return np.nanmean(res)
         
     if 'dmpath' in var_name:
         return res
@@ -528,3 +552,96 @@ def aggregate_timeseries(var_name, ts, meta):
 def last_number_key(s):
     matches = re.findall(r'(\d+)(?!.*\d)', s)
     return int(matches[0]) if matches else 0
+
+def get_tempK_from_theta_p(theta, p):
+    
+    """
+    where Rd is the gas constant for dry air and cp is the specific heat capacity at constant pressure.
+    Rd = 287.058 # J/(kg K)
+    cp = 1005.7 # J/(kg K)
+    return theta * (p/1000)**(Rd/cp)
+    """
+    Rd = 287.058 # J/(kg K)
+    cp = 1005.7 # J/(kg K)
+    T = theta * (p/100000)**(Rd/cp)
+    return T
+
+def saturation_vapor_pressure_liquid(T):
+    """
+    Calculates the saturation vapor pressure (es) with respect to liquid water.
+    This function is a translation of the polysvp2 Fortran function 
+    for i_type=0 (liquid saturation). It uses a polynomial fit (Flatau et al. 1992)
+    for T >= 202.0 K and a modified Goff-Gratch equation for T < 202.0 K.
+
+    Args:
+        T (array_like): Absolute temperature (K).
+
+    Returns:
+        array_like: Saturation vapor pressure (Pa).
+    """
+    
+    # Ensure T is a NumPy array for vectorized operations
+    T = np.asarray(T)
+    
+    # Constants for saturation over liquid (a0, a1, ..., a8) from the Fortran code
+    A = np.array([
+        6.11239921, 
+        0.443987641, 
+        0.142986287e-1, 
+        0.264847430e-3, 
+        0.302950461e-5, 
+        0.206739458e-7, 
+        0.640689451e-10, 
+        -0.952447341e-13, 
+        -0.976195544e-15
+    ])
+    
+    T_CELSIUS = T - 273.15  # Temperature in Celsius (dt in the Fortran code)
+    
+    # Initialize the output array
+    es = np.zeros_like(T, dtype=float)
+    
+    # --- Part 1: Polynomial (Flatau et al. 1992) for T >= 202.0 K ---
+    
+    # Create a mask for the temperature range
+    mask_poly = (T >= 202.0)
+    
+    if np.any(mask_poly):
+        T_C_poly = T_CELSIUS[mask_poly]
+        
+        # Horner's method for polynomial evaluation (efficiently handles the nested multiplication)
+        # P(x) = a0 + x*(a1 + x*(a2 + ... + x*(a7 + x*a8)...))
+        poly_val = (A[8] * T_C_poly + A[7]) * T_C_poly + A[6]
+        poly_val = (poly_val * T_C_poly + A[5]) * T_C_poly + A[4]
+        poly_val = (poly_val * T_C_poly + A[3]) * T_C_poly + A[2]
+        poly_val = (poly_val * T_C_poly + A[1]) * T_C_poly + A[0]
+
+        # The result is in hPa, so multiply by 100 to get Pa
+        es[mask_poly] = poly_val * 100.0
+
+    # --- Part 2: Modified Goff-Gratch for T < 202.0 K ---
+    
+    mask_gg = (T < 202.0)
+    
+    if np.any(mask_gg):
+        T_gg = T[mask_gg]
+        
+        # Fortran: polysvp2 = 10.**(-7.90298*(373.16/t-1.) + ... + alog10(1013.246)) * 100.
+        # Python: uses np.log10 for alog10 and ** for exponentiation
+        
+        # Constants from the Goff-Gratch part of the Fortran code
+        T_STAR = 373.16  # Boiling point of water (K)
+        P_STAR = 1013.246 # Standard pressure (hPa)
+        
+        exponent = (
+            -7.90298 * (T_STAR / T_gg - 1.0)
+            + 5.02808 * np.log10(T_STAR / T_gg)
+            - 1.3816e-7 * (10.0**(11.344 * (1.0 - T_gg / T_STAR)) - 1.0)
+            + 8.1328e-3 * (10.0**(-3.49149 * (T_STAR / T_gg - 1.0)) - 1.0)
+            + np.log10(P_STAR)
+        )
+        
+        # The result is 10^exponent in hPa, so multiply by 100 to get Pa
+        es[mask_gg] = 10.0**exponent * 100.0
+
+    return es
