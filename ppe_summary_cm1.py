@@ -33,24 +33,29 @@ tqdm_disable = not sys.stderr.isatty()
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
 def main():
-    """Main function to process PPE data with memory efficiency"""
+    """Main function to process PPE data"""
     # Configuration
-    l_parallel = False
-    l_testing = True
-    n_test = 3
-    nikki = ''
-    target_nikki = 'target'
-    # sim_config = 'NCE_dycoms_aphase_lhs'
-    # target_sim_config = 'NCE_dycoms'
+    l_parallel = True
+    l_testing = False
+    n_workers = 128
+    n_test = n_workers
+    l_pert = True
+
+    # list of directories
+
+    # sim_config = [
+    #     'fullmp_dycoms_pcoal_newacoal_lhs',
+    # ] # list of directories
+    # target_sim_config = 'fullmp_dycoms_tgt_pert'
     # steady_state_hrs = 2
-    # sim_config = 'fullmp_joint_dycoms_eo6_r1_lhs'
-    # target_sim_config = 'fullmp_dycoms_t_onset_1e-4'
-    sim_config = 'fullmp_joint_rico_eo6_r1_lhs'
-    target_sim_config = 'fullmp_rico_t_onset_1e-4'
-    steady_state_hrs = 4
-    # sim_config = 'fullmp_joint_rico_eo4_lhs'
-    # target_sim_config = 'fullmp_rico_t_onset_1e-4'
-    lwp_threshold = 0.02
+
+    sim_config = [
+        'fullmp_rico_pcoal_fixadv_lhs',
+    ] # list of directories
+    target_sim_config = 'fullmp_rico_tgt_pert'
+    steady_state_hrs = 6
+
+    lwp_threshold = 0.05 # equiv to 20 g/m2
     print('lwp_threshold:', lwp_threshold)
     print('PPE directory:', sim_config)
     print('target directory:', target_sim_config)
@@ -62,42 +67,50 @@ def main():
     n_init = 1
     target_mp = 'BIN-TAU'
     train_mp = 'SLC-BOSS'
-    mconfigs = os.listdir(cl.output_dir + nikki)
-    vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
+    datedir = 'ppe'
+    target_datedir = 'target'
+
+    # mconfigs = os.listdir(cl.output_dir + datedir) # this line seems unused and might fail if sim_config is list, but it uses os.listdir(cl.output_dir + datedir) which is fine if datedir is empty string and output_dir is base. 
+    # But wait, cl.output_dir + datedir is just the date dir. 
+    # mconfigs is unused in the script? Let's check. 
+    # It is unused. I will leave it or comment it out if it causes issues.
+    
+    vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_datedir, target_sim_config, n_init)
     var_interest = []
     var_interest += [
-                     'M0_dmpath_ss_mean', 'M3_dmpath_ss_mean', 'M4_dmpath_ss_mean', 'M6_dmpath_ss_mean', 
-                     'M0_path_ss_std', 'M3_path_ss_std', 'M4_path_ss_std', 'M6_path_ss_std', 
-                     'M6_ss_99th_prctl', 'meanD_dm_03_ss_mean',
-                     'prate_dm_ss_mean', 'prate_ss_std', 'v_precip_onset', 'precip_max_dm',
+                     'M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss', 
+                     'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss', 
+                     'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', # 'decorr_length_ss',
+                     'prate_dm_ss', 'prate_ds_ss', 'precip_max_dm', 'prate_90th_ss',
                     ] # domain-mean path
-    # var_interest += ['M0_path_ss_mean', 'M3_path_ss_mean', 'M4_path_ss_mean', 'M6_path_ss_mean',] # domain-mean path
-    # var_interest += ['M0_per5lvl_ss_mean', 'M3_per5lvl_ss_mean', 'M4_per5lvl_ss_mean', 'M6_per5lvl_ss_mean']
-    # var_interest += ['sfM0_per5lvl_ss_mean', 'sfM3_per5lvl_ss_mean', 'sfM4_per5lvl_ss_mean', 'sfM6_per5lvl_ss_mean'] # domain-mean fluxes
-    var_interest += [
-            # 'sfM0_per5lvl', 'sfM3_per5lvl', 'sfM4_per5lvl', 'sfM6_per5lvl',
-            'sfM0_dm_10m_ss_mean',  'sfM3_dm_10m_ss_mean',  'sfM4_dm_10m_ss_mean',  'sfM6_dm_10m_ss_mean',
-            'sfM0_dm_100m_ss_mean', 'sfM3_dm_100m_ss_mean', 'sfM4_dm_100m_ss_mean', 'sfM6_dm_100m_ss_mean',
-            'sfM0_dm_250m_ss_mean', 'sfM3_dm_250m_ss_mean', 'sfM4_dm_250m_ss_mean', 'sfM6_dm_250m_ss_mean',
-            # 'sfM0_dm_500m_ss_mean', 'sfM3_dm_500m_ss_mean', 'sfM4_dm_500m_ss_mean', 'sfM6_dm_500m_ss_mean',
-]
+    # var_interest += ['M0_path_ss', 'M3_path_ss', 'M4_path_ss', 'M6_path_ss',] # domain-mean path
+    # var_interest += ['M0_per5lvl_ss', 'M3_per5lvl_ss', 'M4_per5lvl_ss', 'M6_per5lvl_ss']
+    # var_interest += ['sfM0_per5lvl_ss', 'sfM3_per5lvl_ss', 'sfM4_per5lvl_ss', 'sfM6_per5lvl_ss'] # domain-mean fluxes
+#     var_interest += [
+#             # 'sfM0_per5lvl', 'sfM3_per5lvl', 'sfM4_per5lvl', 'sfM6_per5lvl',
+#             'sfM0_dm_10m_ss',  'sfM3_dm_10m_ss',  'sfM4_dm_10m_ss',  'sfM6_dm_10m_ss',
+#             'sfM0_dm_100m_ss', 'sfM3_dm_100m_ss', 'sfM4_dm_100m_ss', 'sfM6_dm_100m_ss',
+#             'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
+#             # 'sfM0_dm_500m_ss', 'sfM3_dm_500m_ss', 'sfM4_dm_500m_ss', 'sfM6_dm_500m_ss',
+# ]
+
+    # if 'dycoms' in sim_config:
+    #     var_interest += ['v_precip_onset']
 
     # Process data
     
     file_info = {'dir': cl.output_dir, 
-                'date': nikki,
+                'date': datedir,
                 'vars_vn': vars_vn}
-
+    
+    # Initialize nc_dict default if not present
     if 'nc_dict' not in globals():
         nc_dict = {}
 
-    # Load PPE data
-    print("\nLoading PPE data...")
     file_info.update({'sim_config': sim_config,
-                    'date': nikki,
+                    'date': datedir,
                     'mp_config': train_mp})
-    ppe_idx = cl.get_ppe_idx(file_info)
-    ppe_idx = [int(i) for i in ppe_idx]
+    ppe_idx = cl.get_pert_idx(file_info)
 
     if l_testing:
         ppe_idx = ppe_idx[:n_test]
@@ -106,10 +119,19 @@ def main():
         else:
             vars_strs = [vars_strs[0]]
 
+    # Update logic for filename if sim_config is list
+    sim_config_str = sim_config[-1] if isinstance(sim_config, list) else sim_config
+    # If list, maybe join names or just use first one? User said "each directory... will still count from 1 to however many ensembles".
+    # The output filename uses `sim_config`. I should probably adjust this if it's a list. 
+    # But for now, let's just use the first one or a combined name.
+    # The user didn't specify filename format change, only internal handling.
+    # I'll use the first config name for the file or join them. 
+    # Let's use sim_config[0] for the filename prefix if it's a list.
+    
     if l_testing:
-        nc_filename = f"{lp.nc_dir}{sim_config}_momval_lwp{lwp_threshold}_test_N{n_test}.nc"
+        nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{lwp_threshold}_test_N{n_test}.nc"
     else:
-        nc_filename = f"{lp.nc_dir}{sim_config}_momval_lwp{lwp_threshold}_N{len(ppe_idx)}.nc"
+        nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{lwp_threshold}_N{len(ppe_idx)}.nc"
 
     if l_parallel:
         # On compute nodes, use processes (True) for library isolation (NetCDF is often not thread-safe).
@@ -118,16 +140,17 @@ def main():
         
         # Using a reasonable number of workers (e.g., 16) even on a full compute node 
         # is usually safer and faster for I/O bound NetCDF tasks.
-        client = Client(n_workers=32, threads_per_worker=1, processes=True, local_directory=dask_scratch)
+        client = Client(n_workers=n_workers, threads_per_worker=1, processes=True, local_directory=dask_scratch)
         print(f"Dask dashboard available at: {client.dashboard_link}")
-        print(f"Using 16 Processes. Scratch: {dask_scratch}")
+        print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
 
         tasks = []
         for ippe in ppe_idx:
             # We pass None as nc_dict so it returns a new one for each member
+            # ippe is now a dictionary
             task = dask.delayed(cl.load_cm1)(
-                file_info, var_interest, None, True, 
-                ss_hrs=steady_state_hrs, ippe=ippe, lwp_threshold=lwp_threshold
+                file_info, var_interest, steady_state_hrs, nc_dict=None, continuous_ic=True, 
+                ipert=ippe, lwp_threshold=lwp_threshold
             )
             tasks.append(task)
 
@@ -139,8 +162,9 @@ def main():
         for r in tqdm(results, desc='merging PPE results'):
             cl.deep_merge(nc_dict, r)
     else:
-        for ippe in tqdm(ppe_idx, desc='loading BOSS data'):
-            cl.load_cm1(file_info, var_interest, nc_dict, True, ss_hrs=steady_state_hrs, ippe=ippe, lwp_threshold=lwp_threshold)
+        pbar = tqdm(ppe_idx, desc='loading BOSS data')
+        for ippe in pbar:
+            cl.load_cm1(file_info, var_interest, steady_state_hrs, nc_dict=nc_dict, continuous_ic=True, ipert=ippe, lwp_threshold=lwp_threshold, pbar=pbar)
 
     # Load target data
     print("\nLoading target data...")
@@ -152,14 +176,24 @@ def main():
             finfo_target.update({
                 'sim_config': target_sim_config,
                 'vars_str': list(initcond_combo),
-                'date': target_nikki,
-                'mp_config': target_mp
+                'date': target_datedir,
+                'mp_config': target_mp,
+                'l_pert': l_pert
             })
-            task = dask.delayed(cl.load_cm1)(
-                finfo_target, var_interest, None, False, 
-                ss_hrs=steady_state_hrs, lwp_threshold=lwp_threshold
-            )
-            tasks.append(task)
+            if l_pert:
+                target_pert_idx = cl.get_pert_idx(finfo_target)
+                for ipert in target_pert_idx:
+                    task = dask.delayed(cl.load_cm1)(
+                        finfo_target, var_interest, steady_state_hrs, nc_dict=None, continuous_ic=False, 
+                        ipert=ipert, lwp_threshold=lwp_threshold
+                    )
+                    tasks.append(task)
+            else:
+                task = dask.delayed(cl.load_cm1)(
+                    finfo_target, var_interest, steady_state_hrs, nc_dict=None, continuous_ic=False, 
+                    lwp_threshold=lwp_threshold
+                )
+                tasks.append(task)
 
         print("Computing target data in parallel...")
         futures = client.compute(tasks)
@@ -172,46 +206,19 @@ def main():
         # Shutdown client
         client.close()
     else:
-        for initcond_combo in tqdm(itertools.product(*vars_strs), desc='loading BIN data'):
+        pbar = tqdm(itertools.product(*vars_strs), desc='loading BIN data')
+        for initcond_combo in pbar:
             file_info.update({'sim_config': target_sim_config,
                             'vars_str': list(initcond_combo),
-                            'date': target_nikki,
-                            'mp_config': target_mp})
-            cl.load_cm1(file_info, var_interest, nc_dict, False, ss_hrs=steady_state_hrs, lwp_threshold=lwp_threshold)
-
-#     plot_dir = f"plots/{nikki}/{sim_config}/"
-#     if not os.path.exists(plot_dir):
-#         os.makedirs(plot_dir)
-
-#     fig, axs = plt.subplots(2, 3, figsize=(12, 8), sharex=True)
-#     axs = axs.flatten()
-#     na = []
-#     for initcond_combo in itertools.product(*vars_strs):
-#         ic_str = "".join(initcond_combo)
-#         na.append(nc_dict[ic_str]['BIN-TAU']['na'])
-
-#     na = np.array(na)
-
-#     for ivar, var_name in enumerate(var_interest[:5]):
-#         tgt_data = []
-#         train_data = []
-#         na_train = []
-#         for initcond_combo in itertools.product(*vars_strs):
-#             ic_str = "".join(initcond_combo)
-#             tgt_data.append(nc_dict[ic_str]['BIN-TAU'][var_name]['value'])
-#         for ippe in ppe_idx:
-#             ippe = int(ippe)
-#             train_data.append(nc_dict['cic']['SLC-BOSS'][ippe][var_name]['value'])
-#             na_train.append(nc_dict['cic']['SLC-BOSS'][ippe]['na'])
-#         tgt_data = np.array(tgt_data)
-#         train_data = np.array(train_data)
-#         na_train = np.array(na_train)
-#         axs[ivar].plot(na, tgt_data, label=ic_str, linewidth=2, marker='o')
-#         axs[ivar].scatter(na_train, train_data, label=ic_str, s=5, color='tab:orange', alpha=0.5)
-#         axs[ivar].set_title(cl.output_var_set[var_name]['longname'])
-#         axs[ivar].set_yscale('log')
-
-#     plt.savefig(f"{plot_dir}{sim_config}_dm_path.png")
+                            'date': target_datedir,
+                            'mp_config': target_mp,
+                            'l_pert': l_pert})
+            if l_pert:
+                target_pert_idx = cl.get_pert_idx(file_info)
+                for ipert in target_pert_idx:
+                    cl.load_cm1(file_info, var_interest, steady_state_hrs, nc_dict=nc_dict, continuous_ic=False, ipert=ipert, lwp_threshold=lwp_threshold, pbar=pbar)
+            else:
+                cl.load_cm1(file_info, var_interest, steady_state_hrs, nc_dict=nc_dict, continuous_ic=False, lwp_threshold=lwp_threshold, pbar=pbar)
 
     ncase = 1
     ncase_respective = [len(i) for i in vars_strs]
@@ -224,21 +231,30 @@ def main():
         'nppe': len(ppe_idx),
     }
 
+    if l_pert:
+        first_combo = list(itertools.product(*vars_strs))[0]
+        first_ic = "".join(first_combo)
+        dims['npert'] = len(nc_dict[target_sim_config][target_mp][first_ic].keys())
+
     global_attrs = {
-        'description': 'PPE data for ' + sim_config,
-        'date_simulated': nikki,
+        'description': 'PPE data for ' + sim_config_str,
+        'date_simulated': datedir,
     }
     
     
     # Create variable structure
-    ncvars = create_nc_variables_structure(nc_dict, vars_vn, var_interest)
+    ncvars = create_nc_variables_structure(nc_dict, vars_vn, var_interest, l_pert)
     
     print("\nProcessing target data...")
-    process_target_data(nc_dict, vars_vn, vars_strs, var_interest, ncvars, dims, target_mp)
+    if l_pert:
+        tgt_pert_list = cl.get_pert_idx(file_info)
+    else:
+        tgt_pert_list = None
+    process_target_data(nc_dict, vars_vn, vars_strs, var_interest, ncvars, dims, target_mp, target_sim_config, l_pert, tgt_pert_list)
                         
     # Processing PPE data
     print("\nProcessing PPE data...")
-    ncvars, dims = process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, nikki, sim_config, train_mp)
+    ncvars, dims = process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, datedir, sim_config, train_mp)
     
     # Set up global attributes
     global_attrs['thresholds_eff0'] = []
@@ -250,6 +266,10 @@ def main():
     for var_vn in vars_vn:
         global_attrs[var_vn + '_units'] = nc_dict[var_vn + '_units']
     global_attrs['n_init'] = n_init
+    if 'npert' in dims:
+        global_attrs['npert'] = dims['npert']
+    else:
+        global_attrs['npert'] = 1
     global_attrs['n_param_nevp'] = nc_dict['n_param_nevp']
     global_attrs['n_param_condevp'] = nc_dict['n_param_condevp']
     global_attrs['n_param_coal'] = nc_dict['n_param_coal']
@@ -314,7 +334,7 @@ def main():
     
     print("\nProcessing complete!")
 
-def create_nc_variables_structure(nc_dict, vars_vn, var_interest):
+def create_nc_variables_structure(nc_dict, vars_vn, var_interest, l_pert):
     """Create the netCDF variable structure without loading data"""
     ncvars = {}
     # Initialize PPE variables
@@ -335,7 +355,7 @@ def create_nc_variables_structure(nc_dict, vars_vn, var_interest):
             'data': None
         }
         ncvars['tgt_' + ivar] = {
-            'dims': ('ncase',),
+            'dims': ('ncase', 'npert') if l_pert else ('ncase',),
             'units': var_units,
             'data': None
         }
@@ -359,14 +379,27 @@ def create_nc_variables_structure(nc_dict, vars_vn, var_interest):
     
     return ncvars
 
-def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, nikki, sim_config, train_mp):
+def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, datedir, sim_config, train_mp):
     """Load PPE data with memory cleanup"""
     ic_str = 'cic'
     
     # Load PPE parameters
-    for ippe, ppe in enumerate(tqdm(ppe_idx, desc='loading params')):
-        param_df = pd.read_csv(f"{cl.output_dir}{nikki}/{sim_config}/{train_mp}/{ppe}/params.csv")
-        if ippe == 0:  # First iteration
+    for i, ppe_item in enumerate(tqdm(ppe_idx, desc='loading params')):
+        # Check if ppe_item is dict or legacy
+        if isinstance(ppe_item, dict):
+            current_config = ppe_item['sim_config']
+            member = ppe_item['member']
+            # global_id = ppe_item['global_id']
+            ippe_idx = ppe_item['global_id'] # Use global_id as index
+        else:
+            current_config = sim_config[0] if isinstance(sim_config, list) else sim_config
+            member = str(ppe_item)
+            ippe_idx = i
+
+        # Construct path using the correct config
+        param_df = pd.read_csv(f"{cl.output_dir}{datedir}/{current_config}/{train_mp}/{member}/params.csv")
+        
+        if i == 0:  # First iteration
             # nparams = nc_dict['n_param_nevp'] + nc_dict['n_param_condevp'] + \
             #           nc_dict['n_param_coal'] + nc_dict['n_param_sed']
             if param_df.shape[0] > 5:
@@ -400,52 +433,82 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, nikk
 
         # Store parameters
         if is_vertical:
-            ncvars['params_PPE']['data'][ippe, :] = np.array(param_df.iloc[:, 1].to_numpy())
+            ncvars['params_PPE']['data'][ippe_idx, :] = np.array(param_df.iloc[:, 1].to_numpy())
         else:
-            ncvars['params_PPE']['data'][ippe, :] = np.array(param_df)
+            ncvars['params_PPE']['data'][ippe_idx, :] = np.array(param_df)
         
         # Store initial conditions
         for var_vn in vars_vn:
             if ncvars[var_vn + '_PPE']['data'] is None:
                 ncvars[var_vn + '_PPE']['data'] = np.zeros((len(ppe_idx),))
-            ncvars[var_vn + '_PPE']['data'][ippe] = nc_dict[ic_str][train_mp][ppe][var_vn]
+            
+            # Retrieve value from nc_dict using global dict key
+            ncvars[var_vn + '_PPE']['data'][ippe_idx] = nc_dict[current_config][train_mp][ic_str][ippe_idx][var_vn]
     
     # Load summary variables
     for ivar in var_interest:
-        ncvars['ppe_' + ivar]['data'] = np.array([nc_dict[ic_str][train_mp][ppe][ivar]['value'] for ppe in ppe_idx])
+        # Re-construct list of values using ppe indices (which are global IDs in nc_dict)
+        data_list = []
+        for ppe_item in ppe_idx:
+            if isinstance(ppe_item, dict):
+                idx = ppe_item['global_id']
+                item_config = ppe_item['sim_config']
+            else:
+                idx = int(ppe_item)
+                item_config = sim_config[0] if isinstance(sim_config, list) else sim_config
+            data_list.append(nc_dict[item_config][train_mp][ic_str][idx][ivar]['value'])
+            
+        ncvars['ppe_' + ivar]['data'] = np.array(data_list)
 
     return ncvars, dims
 
-def process_target_data(nc_dict, vars_vn, vars_strs, var_interest, ncvars, dims, target_mp):
+def process_target_data(nc_dict, vars_vn, vars_strs, var_interest, ncvars, dims, target_mp, target_sim_config, l_pert, tgt_pert_list):
     """Process target data with memory cleanup"""
     ncase = dims['ncase']
     
     combo = list(itertools.product(*vars_strs))[0]
     ic_str = "".join(combo)
 
+    def get_tgt_val(ic_str_key, var_key):
+        if l_pert:
+            available_idxs = list(nc_dict[target_sim_config][target_mp][ic_str_key].keys())
+            vals = []
+            for idx in available_idxs:
+                vals.append(nc_dict[target_sim_config][target_mp][ic_str_key][idx][var_key]['value'])
+            return np.array(vals)
+        else:
+            return nc_dict[target_sim_config][target_mp][ic_str_key][var_key]['value']
+
     for ivar in var_interest:
-        tgt_dims = (ncase,)
+        tgt_dims = (ncase, dims['npert']) if l_pert else (ncase,)
+        ref_val = get_tgt_val(ic_str, ivar)
         if 'ntime' in ncvars['tgt_' + ivar]['dims']:
-            dims['ntime'] = nc_dict[ic_str][target_mp][ivar]['value'].shape[0]
+            dims['ntime'] = ref_val.shape[1] if l_pert else ref_val.shape[0]
             tgt_dims += (dims['ntime'],)
         if 'nlevel' in ncvars['tgt_' + ivar]['dims']:
-            dims['nlevel'] = nc_dict[ic_str][target_mp][ivar]['value'].shape[-1]
+            dims['nlevel'] = ref_val.shape[-1]
             tgt_dims += (dims['nlevel'],)
 
         ncvars['tgt_' + ivar]['data'] = np.zeros(tgt_dims)
 
         icase = 0
         for combo in itertools.product(*vars_strs):
-            ic_str = "".join(combo)
-            ncvars['tgt_' + ivar]['data'][icase] = nc_dict[ic_str][target_mp][ivar]['value']
+            ic_str_cur = "".join(combo)
+            ncvars['tgt_' + ivar]['data'][icase] = get_tgt_val(ic_str_cur, ivar)
             icase += 1
 
     for var_vn in vars_vn:
-        ncvars['case_' + var_vn]['data'] = np.zeros(ncase)
+        tgt_case_dims = (ncase,)
+        ncvars['case_' + var_vn]['data'] = np.zeros(tgt_case_dims)
     for icase, combo in enumerate(itertools.product(*vars_strs)):
-        ic_str = "".join(combo)
+        ic_str_cur = "".join(combo)
         for i_init, var_vn in enumerate(vars_vn):
-            ncvars['case_' + var_vn]['data'][icase] = nc_dict[ic_str][target_mp][var_vn]
+            if l_pert:
+                available_idxs = list(nc_dict[target_sim_config][target_mp][ic_str_cur].keys())
+                val = nc_dict[target_sim_config][target_mp][ic_str_cur][available_idxs[0]][var_vn]
+            else:
+                val = nc_dict[target_sim_config][target_mp][ic_str_cur][var_vn]
+            ncvars['case_' + var_vn]['data'][icase] = val
 
 def write_netcdf(nc_file, ncvars, dims, global_attrs):
     """Write netCDF data with memory cleanup"""
