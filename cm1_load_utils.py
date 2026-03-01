@@ -228,6 +228,7 @@ output_var_set = {
                   'reff': {'var_source': 'reff', 'var_unit': 'μm', 'scale': 1e6, 'longname': 'Effective radius (μm)'},
                   # LWP is already given as an input so no var_source is needed
                   'decorr_length_ss': {'var_source': [], 'var_unit': 'm', 'longname': 'Decorrelation Length (m)'}, 
+                  'precip_frac_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'longname': 'Precipitation Fraction'},
                   }
 
 def get_pert_idx(file_info):
@@ -292,7 +293,7 @@ def deep_merge(dict1, dict2):
             dict1[key] = value
     return dict1
 
-def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, ipert=0, lwp_threshold=0.02, pbar=None):
+def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, ipert=0, lwp_threshold=0.05, pbar=None):
     if nc_dict is None:
         nc_dict = {}
         
@@ -454,7 +455,9 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
             data[mask] = np.nan
         else:
             # Mask based on column LWP
-            mask = lwp <= lwp_threshold
+            lwp_mask = lwp <= lwp_threshold
+            rain_mask = ds.variables['prate'][0, ...]*3600 <= 1e-5
+            mask = lwp_mask & rain_mask
             if data.ndim >= 2:
                 data[..., mask] = np.nan
         return data
@@ -529,6 +532,8 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
                 res = lags[-1]
             else:
                 res = lags[idx]
+        elif 'precip_frac' in var_name:
+            res = np.mean(raw_data * scale > 1e-4) # mm/hr
         else:
             res = raw_data[0, ...] * scale
 
@@ -586,16 +591,16 @@ def get_spatial_autocorrelation(lwp_field, dx):
 def aggregate_timeseries(var_name, ts, meta):
     if not ts: return np.nan
     
-    if 'meanD_dm' in var_name:
-        num = np.nanmean([x[0] for x in ts])
-        den = np.nanmean([x[1] for x in ts])
-        res = (num / den)**(1/3) * 1e6 if den > 0 else np.nan
-        return res
-    
-    arr = np.squeeze(np.stack(ts))
-    
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
+
+        if 'meanD_dm' in var_name:
+            num = np.nanmean([x[0] for x in ts])
+            den = np.nanmean([x[1] for x in ts])
+            res = (num / den)**(1/3) * 1e6 if den > 0 else np.nan
+            return res
+
+        arr = np.squeeze(np.stack(ts))
 
         if meta['is_ds']:
             # is domain std
@@ -604,7 +609,11 @@ def aggregate_timeseries(var_name, ts, meta):
         if meta['is_dm']:
             # is domain mean
             arr = np.nanmean(arr, axis=(1,2))
-        
+
+        # Temporal average
+        if meta['is_ss']:
+            arr = np.nanmean(arr, axis=0)
+
         if meta['is_prc']:
             # is percentile
             valid = arr[~np.isnan(arr) & (arr > 0)]
@@ -619,22 +628,16 @@ def aggregate_timeseries(var_name, ts, meta):
         if 't_precip_onset' in var_name:
             return arr.min()
 
-        # Temporal average
-        if meta['is_ss']:
-            res = np.nanmean(arr, axis=0)
-        else:
-            res = arr
-
         if 'precip_max_dm' in var_name:
-            return np.nanmax(res)
+            return np.nanmax(arr)
 
         if '_runmean' in var_name:
-            return np.nanmean(res)
+            return np.nanmean(arr)
             
         if 'dmpath' in var_name:
-            return res
+            return arr
         else:
-            return np.nan_to_num(res, nan=0.0) if not isinstance(res, tuple) else res
+            return np.nan_to_num(arr, nan=0.0) if not isinstance(arr, tuple) else arr
 
 def last_number_key(s):
     matches = re.findall(r'(\d+)(?!.*\d)', s)
