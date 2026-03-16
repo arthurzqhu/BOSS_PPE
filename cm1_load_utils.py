@@ -54,7 +54,7 @@ output_var_set = {
                   'M6_path': {'var_source': 'qc6', 'var_unit': 'm$^6$/m$^2$', 'scale': 1e-4**6, 'longname': 'M6 Path'},
                   'M9_path': {'var_source': 'qc9', 'var_unit': 'm$^9$/m$^2$', 'scale': 1e-4**9, 'longname': 'M9 Path'},
                   'M0_dmprof': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Domain-Mean LNC'},
-                  'M3_dmprof': {'var_source': 'qc3', 'var_unit': 'g/kg', 'scale': M3toQ*1e3, 'longname': 'Domain-Mean LWC'},
+                  'M3_dmprof': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Domain-Mean LWC'},
                   'M4_dmprof': {'var_source': 'qc4', 'var_unit': 'm$^4$/kg', 'scale': 1e-4**4, 'longname': 'Domain-Mean M4'},
                   'M5_dmprof': {'var_source': 'qc5', 'var_unit': 'm$^5$/kg', 'scale': 1e-4**5, 'longname': 'Domain-Mean M5'},
                   'M6_dmprof': {'var_source': 'qc6', 'var_unit': 'm$^6$/kg', 'scale': 1e-4**6, 'longname': 'Domain-Mean M6'},
@@ -66,13 +66,13 @@ output_var_set = {
                   'M6_dmpath': {'var_source': 'qc6', 'var_unit': 'm$^6$/m$^2$', 'scale': 1e-4**6, 'longname': 'Domain-Mean M6 Path'},
                   'M9_dmpath': {'var_source': 'qc9', 'var_unit': 'm$^9$/m$^2$', 'scale': 1e-4**9, 'longname': 'Domain-Mean M9 Path'},
                   'M0_curtain_slice': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNC'}, 
-                  'M3_curtain_slice': {'var_source': 'qc3', 'var_unit': 'g/kg', 'scale': M3toQ*1e3, 'longname': 'LWC'}, 
+                  'M3_curtain_slice': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
                   'M4_curtain_slice': {'var_source': 'qc4', 'var_unit': 'm$^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
                   'M5_curtain_slice': {'var_source': 'qc5', 'var_unit': 'm$^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
                   'M6_curtain_slice': {'var_source': 'qc6', 'var_unit': 'm$^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
                   'M9_curtain_slice': {'var_source': 'qc9', 'var_unit': 'm$^9$/kg', 'scale': 1e-4**9, 'longname': 'M9'},
                   'M0_curtain_mean': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNC'}, 
-                  'M3_curtain_mean': {'var_source': 'qc3', 'var_unit': 'g/kg', 'scale': M3toQ*1e3, 'longname': 'LWC'}, 
+                  'M3_curtain_mean': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
                   'M4_curtain_mean': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
                   'M5_curtain_mean': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'M5'},
                   'M6_curtain_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
@@ -95,18 +95,22 @@ output_var_set = {
                   'M5_dspath_ss': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'Steady State DS M5'},
                   'M6_dspath_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'Steady State DS M6'},
                   'M9_dspath_ss': {'var_source': 'qc9', 'var_unit': '$m^9$/$m^2$', 'scale': 1e-4**9, 'longname': 'Steady State DS M9'},
-                  'M0_10m_ss': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP'}, 
-                  'M3_10m_ss': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC'}, 
-                  'M4_10m_ss': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4'},
-                  'M5_10m_ss': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
-                  'M6_10m_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
-                  'M9_10m_ss': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
-                  'M0_250m_ss': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP'}, 
-                  'M3_250m_ss': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC'}, 
-                  'M4_250m_ss': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4'},
-                  'M5_250m_ss': {'var_source': 'qc5', 'var_unit': '$m^5$/kg', 'scale': 1e-4**5, 'longname': 'Steady State M5'},
-                  'M6_250m_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6'},
-                  'M9_250m_ss': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'Steady State M9'},
+                  'M0_dm_10m_ss': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP 10m'}, 
+                  'M3_dm_10m_ss': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC 10m'}, 
+                  'M4_dm_10m_ss': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4 10m'}, 
+                  'M6_dm_10m_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6 10m'}, 
+                  'M0_dm_100m_ss': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP 100m'}, 
+                  'M3_dm_100m_ss': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC 100m'}, 
+                  'M4_dm_100m_ss': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4 100m'}, 
+                  'M6_dm_100m_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6 100m'}, 
+                  'M0_dm_250m_ss': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP 250m'}, 
+                  'M3_dm_250m_ss': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC 250m'}, 
+                  'M4_dm_250m_ss': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4 250m'}, 
+                  'M6_dm_250m_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6 250m'}, 
+                  'M0_dm_500m_ss': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'Steady State LNP 500m'}, 
+                  'M3_dm_500m_ss': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'Steady State LWC 500m'}, 
+                  'M4_dm_500m_ss': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'Steady State M4 500m'}, 
+                  'M6_dm_500m_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'Steady State M6 500m'}, 
                   'LNC': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNC'}, 
                   'LWC': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'}, 
                   'M4': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
@@ -437,7 +441,7 @@ def parse_var_meta(var_name):
     is_ds   = bool(re.search(r'_ds', var_name))
 
     # is steady state (temporal mean of the last x hr)
-    is_ss   = bool(re.search(r'ss', var_name))
+    is_ss   = bool(re.search(r'_ss', var_name))
 
     return {'is_prc': is_prc, 'nth_prctl': nth_prctl, 'is_dm': is_dm, 'is_ds': is_ds, 'is_ss': is_ss}
 
@@ -535,7 +539,7 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
         elif 'precip_frac' in var_name:
             res = np.mean(raw_data * scale > 1e-4) # mm/hr
         else:
-            res = raw_data[0, ...] * scale
+            res = raw_data.squeeze() * scale
 
     return res
 
@@ -601,6 +605,7 @@ def aggregate_timeseries(var_name, ts, meta):
             return res
 
         arr = np.squeeze(np.stack(ts))
+
 
         if meta['is_ds']:
             # is domain std

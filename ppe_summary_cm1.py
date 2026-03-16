@@ -58,14 +58,14 @@ def main():
     lwp_threshold = 0.05 # equiv to 20 g/m2
     print('lwp_threshold:', lwp_threshold)
     print('PPE directory:', sim_config)
-    print('target directory:', target_sim_config)
+    print('target directory:', tgt_config)
     
     if not os.path.exists(lp.nc_dir):
         os.makedirs(lp.nc_dir)
     l_cic = True
     
     n_init = 1
-    target_mp = 'BIN-TAU'
+    tgt_mp = 'BIN-TAU'
     train_mp = 'SLC-BOSS'
     datedir = 'ppe'
     target_datedir = 'target'
@@ -174,7 +174,7 @@ def main():
             # Create a separate file_info for each combo to avoid mutation issues
             finfo_target = file_info.copy()
             finfo_target.update({
-                'sim_config': target_sim_config,
+                'sim_config': tgt_config,
                 'vars_str': list(initcond_combo),
                 'date': target_datedir,
                 'mp_config': target_mp,

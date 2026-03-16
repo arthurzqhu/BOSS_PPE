@@ -8,6 +8,8 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 import random
+import tensorflow as tf
+import tensorflow_probability as tfp
 
 ncol_max = 4
 T = 21600.0
@@ -164,9 +166,9 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
     
     for ivar, varcon in enumerate(var_constraints):
         if ('prate_dm' in varcon or 'precip_max_dm' in varcon) and len(eff0s) > 0:
-            eff0s[ivar] = 1e-3
-        elif 'prate_last2hrstd' in varcon and len(eff0s) > 0:
-            eff0s[ivar] = 1e-3
+            eff0s[ivar] = 1e-4
+        elif 'prate_ss_std' in varcon and len(eff0s) > 0:
+            eff0s[ivar] = 1e-4
     
     if var_select is not None:
         # check if all variables in var_select are in var_constraints
@@ -180,9 +182,20 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
             eff0s = [eff0s[i] for i in var_indices]
     nvar = len(var_constraints)
     ppe_var_names = ['ppe_' + i for i in var_constraints]
-    ppe_raw_vals = [dataset.variables[i][:] for i in ppe_var_names]
+    ppe_raw_vals = []
+    for i in ppe_var_names:
+        val = dataset.variables[i][:]
+        if isinstance(val, np.ma.MaskedArray):
+            val = val.filled(np.nan)
+        ppe_raw_vals.append(val)
+
     tgt_var_names = ['tgt_' + i for i in var_constraints]
-    tgt_raw_vals = [dataset.variables[i][:] for i in tgt_var_names]
+    tgt_raw_vals = []
+    for i in tgt_var_names:
+        val = dataset.variables[i][:]
+        if isinstance(val, np.ma.MaskedArray):
+            val = val.filled(np.nan)
+        tgt_raw_vals.append(val)
 
     if var_limit_zero is not None:
         if not isinstance(var_limit_zero, str):
@@ -206,6 +219,10 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
     ppe_info['nppe'], ppe_info['nparam_init'] = param_train['vals'].shape
     ppe_info['nobs'] = [int(np.prod(i.shape[1:])) for i in ppe_raw_vals]
     ppe_info['ncases'] = tgt_raw_vals[0].shape[0]
+    try:
+        ppe_info['npert'] = dataset.getncattr('npert')
+    except AttributeError:
+        ppe_info['npert'] = 1
     ppe_info['nvar'] = nvar
     ppe_info['npar'] = ppe_info['nparam_init'] - ppe_info['n_init']
     ppe_info['eff0s'] = eff0s
@@ -233,6 +250,10 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
                 raise ValueError(f"transform_methods ({len(transform_methods)}) must be a string \
                     or a list of length same as var_constraints ({len(var_constraints)})")
             transform_method = transform_methods[ivar]
+
+        # # manually set the transform method to 'standard_scaler' for 'prate'
+        # if 'prate' in varcon or varcon == 'v_precip_onset':
+        #     transform_method = 'standard_scaler'
 
         # reshape data
         if ppe_raw_vals[ivar].ndim >= 2:
@@ -291,15 +312,14 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
 
     if len(ppe_norm) > 0:
         for i, iscale in enumerate(scalers['y']):
-            # iscale.scale_ = iscale.scale_ * scale_mask
             dat = iscale.transform(ppe_norm[i])
-            # dat[ppe_norm[i].mask] = np.nan
             ppe_data.append(dat)
             dat[np.isinf(dat)] = np.nan
             dat = iscale.transform(tgt_norm[i])
-            dat[tgt_norm[i].mask] = np.nan
+            dat[np.isnan(tgt_norm[i])] = np.nan
+            if ppe_info['npert'] > 1:
+                dat = np.reshape(dat, (ppe_info['ncases'], ppe_info['npert']))
             tgt_data.append(dat)
-            dat[np.isinf(dat)] = np.nan
 
     for ivar, (ppe_varr_tmp, ppe_varp_tmp) in enumerate(zip(ppe_data, ppe_var_presence)):
         varcon = var_constraints[ivar]
@@ -333,21 +353,21 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
     dataset.close()
     return x_train, x_val, y_train, y_val, tgt_data, tgt_unc, tgt_initvar_matrix, ppe_info, scalers
 
-def plot_emulator_results(x_val, y_val, model, ppe_info, transform_methods, scalers,
-                          l_plot_uncertainty=False, l_plot_log=True, l_plot_scatter=False):
+def plot_emulator_results(x_val, y_val, models, ppe_info, transform_methods, scalers,
+                          l_plot_uncertainty=False, l_plot_log=True, l_plot_scatter=False, savefig=False):
 
-    y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc = apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers)
+    y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc = get_model_results(models, x_val, y_val, ppe_info, transform_methods, scalers)
 
     if l_plot_scatter:
-        plot_scatter(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log)
-        plot_scatter(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log)
+        plot_scatter(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log, savefig)
+        plot_scatter(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log, savefig)
     else:
-        plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log)
-        plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log)
+        plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log, savefig)
+        plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log, savefig)
     if l_plot_uncertainty:
-        plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info)
+        plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, 'Normalized', ppe_info, savefig)
 
-def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log):
+def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
     
@@ -378,8 +398,11 @@ def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log):
     fig.suptitle(title)
     fig.tight_layout() 
     
+    if savefig:
+        plt.savefig(f'plots/emulator_scatter_{title.replace(" ", "_")}.pdf')
+        # plt.close()
 
-def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
+def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, title, ppe_info, savefig=False):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
 
@@ -443,9 +466,13 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, ppe_info):
         axs[i].set_ylabel('log10 emulator output')
 
     fig.tight_layout()
+
+    if savefig:
+        plt.savefig(f'plots/emulator_2dhist_unc_{title.replace(" ", "_")}.pdf')
+        # plt.close()
         
 
-def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log):
+def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
 
@@ -495,60 +522,115 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log):
     fig.suptitle(title)
     fig.tight_layout()
 
-def apply_model(model, x_val, y_val, ppe_info, transform_methods, scalers):
+    if savefig:
+        plt.savefig(f'plots/emulator_2dhist_{title.replace(" ", "_")}.pdf')
+        # plt.close()
+
+def get_model_results(models, x_val, y_val, ppe_info, transform_methods, scalers):
     eff0s = ppe_info['eff0s']
     nvar = ppe_info['nvar']
     nobs = ppe_info['nobs']
-    varcons = ppe_info['var_constraints']
+    var_constraints = ppe_info['var_constraints']
 
-    y_mdl_inv = []
+    if not isinstance(models, list):
+        models = [models]
+    
+    n_models = len(models)
+    
+    # Initialize lists to hold the sums for averaging across models
+    y_mdl_inv_sum = [0.0] * nvar
+    y_mdl_sum = [0.0] * nvar
+    y_mdl_unc_sum = [0.0] * nvar
+    
+    # Target values are computed once
     y_tgt_inv = []
-    y_mdl = []
     y_tgt = []
-    y_mdl_unc = []
 
-    for i, varcon in enumerate(varcons):
-        
+    for ivar, varcon in enumerate(var_constraints):
+        # Determine the transform method for this variable
         if isinstance(transform_methods, str):
             transform_method = transform_methods
         else:
             if len(transform_methods) != nvar:
                 raise ValueError(f"transform_methods ({len(transform_methods)}) must be a string \
                     or a list of length same as var_constraints ({nvar})")
-            transform_method = transform_methods[i]
-
-        if type(model(x_val)) is dict:
-            presence = 1.
-            if f'presence_{varcon}' in model(x_val).keys():
-                presence = model(x_val)[f'presence_{varcon}'].numpy()
-                presence[presence<0.5] = 0.
-                presence[presence>=0.5] = 1.
-                
-            y_model_raw = model(x_val)[varcon][:,:nobs[i]]
-            y_model_unc = softplus(model(x_val)[varcon][:,nobs[i]:])
-            if type(y_val) is dict:
-                y_val_raw = y_val[varcon][:,:nobs[i]]
-            else:
-                y_val_raw = y_val[i]
+            transform_method = transform_methods[ivar]
             
-            y_mdl_inv.append(presence * inverse_transform_data(y_model_raw, transform_method, scalers['y'][i], eff0s[i]))
-            y_tgt_inv.append(inverse_transform_data(y_val_raw, transform_method, scalers['y'][i], eff0s[i]))
-            y_mdl.append(y_model_raw)
-            y_tgt.append(y_val_raw)
-            y_mdl_unc.append(y_model_unc)
+        # Extract target raw values
+        if isinstance(y_val, dict):
+            y_val_raw = y_val[varcon][:, :nobs[ivar]]
         else:
+            y_val_raw = y_val[ivar]
+        
+        # Invert target raw values
+        y_tgt_inv.append(inverse_transform_data(y_val_raw, transform_method, scalers['y'][ivar], eff0s[ivar]))
+        
+        # Collect target values (they will be cleaned up later)
+        y_tgt.append(y_val_raw)
+
+    # Collect predictions from each model
+    y_mdl_list = [[] for _ in range(nvar)]
+    y_mdl_unc_list = [[] for _ in range(nvar)]
+    y_mdl_inv_list = [[] for _ in range(nvar)]
+
+    for model in models:
+        model_outputs = model(x_val)
+        if not isinstance(model_outputs, dict):
             raise ValueError('model output is not a dictionary. Not yet implemented.')
-            # y_model = model(x_val)[i].numpy().astype('float64')
-            # y_val_raw = y_val[i].numpy().astype('float64')
-            # y_mdl_inv.append(inverse_transform_data(y_model, transform_method, scalers['y'][i], eff0s[i]))
-            # y_tgt_inv.append(inverse_transform_data(y_val_raw, transform_method, scalers['y'][i], eff0s[i]))
-            # y_mdl.append(y_model)
-            # y_tgt.append(y_val[i].numpy().astype('float64'))
-    
+            
+        for ivar, varcon in enumerate(var_constraints):
+            # Determine the transform method
+            if isinstance(transform_methods, str):
+                transform_method = transform_methods
+            else:
+                transform_method = transform_methods[ivar]
+                
+            # `presence` handling
+            presence = 1.0
+            if f'presence_{varcon}' in model_outputs:
+                presence = model_outputs[f'presence_{varcon}'].numpy()
+                presence[presence < 0.5] = 0.
+                presence[presence >= 0.5] = 1.
+            
+            y_model_raw = model_outputs[varcon][:, :nobs[ivar]]
+            y_model_unc = softplus(model_outputs[varcon][:, nobs[ivar]:])
+            
+            # Store for averaging
+            y_mdl_list[ivar].append(y_model_raw)
+            y_mdl_unc_list[ivar].append(y_model_unc)
+            y_mdl_inv_list[ivar].append(presence * inverse_transform_data(y_model_raw, transform_method, scalers['y'][ivar], eff0s[ivar]))
+
+    # Compute means across all models using tf.reduce_mean for differentiability
+    y_mdl = [tf.reduce_mean(tf.stack(vals), axis=0) for vals in y_mdl_list]
+    y_mdl_unc = [tf.reduce_mean(tf.stack(vals), axis=0) for vals in y_mdl_unc_list]
+    y_mdl_inv = [tf.reduce_mean(tf.stack(vals), axis=0) for vals in y_mdl_inv_list]
+
+    # Clean up target values (as in original code)
     for var_tmp in y_tgt:
-        var_tmp[var_tmp<-999] = np.nan
+        var_tmp[var_tmp < -999] = np.nan
     
     return y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc
+
+def apply_model(models, x_input):
+    """
+    Applies a single model or an ensemble of models to the input.
+    Returns a dictionary of averaged results across the ensemble.
+    """
+    if not isinstance(models, list):
+        return models(x_input)
+    
+    # It's an ensemble
+    all_outputs = [model(x_input) for model in models]
+    
+    # Assume all outputs are dictionaries and have the same keys
+    keys = all_outputs[0].keys()
+    avg_output = {}
+    for key in keys:
+        # Average the results for each key across models using tf.reduce_mean
+        vals = [out[key] for out in all_outputs]
+        avg_output[key] = tf.reduce_mean(tf.stack(vals), axis=0)
+        
+    return avg_output
 
 def filter_zeros_and_get_indices(input_list, throw_away_ratio, seed=None):
     if seed:
@@ -610,9 +692,9 @@ def make_weights_dict(y_dict,
         sw[k] = w
     return sw
 
-softplus = lambda x: np.log(1 + np.exp(x))
-smooth_linlog = lambda y, eff0: eff0*np.arcsinh(y/eff0)
-inv_smooth_linlog = lambda y, eff0: eff0*np.sinh(y/eff0)
-boxcox = lambda y, lam: (y**lam - 1)/lam if lam != 0 else np.log(y)
-blowup_tan = lambda t: np.tan(np.pi * (t / T - 0.5))
-blowup_tan_inv = lambda y: T * (0.5 + (1.0/np.pi) * np.arctan(y))
+softplus = lambda x: tf.math.softplus(x)
+smooth_linlog = lambda y, eff0: eff0*tf.math.asinh(y/eff0)
+inv_smooth_linlog = lambda y, eff0: eff0*tf.math.sinh(y/eff0)
+boxcox = lambda y, lam: (y**lam - 1)/lam if lam != 0 else tf.math.log(y)
+blowup_tan = lambda t: tf.math.tan(np.pi * (t / T - 0.5))
+blowup_tan_inv = lambda y: T * (0.5 + (1.0/np.pi) * tf.math.atan(y))

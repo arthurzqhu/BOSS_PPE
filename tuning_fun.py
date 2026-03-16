@@ -8,9 +8,14 @@ from keras.losses import Loss
 import numpy as np
 from keras import ops as K
 
-SQRT2   = tf.sqrt(tf.constant(2., tf.float32))
-SQRT_PI = tf.sqrt(tf.constant(np.pi, tf.float32))
-SQRT_2PI = tf.sqrt(tf.constant(2. * np.pi, tf.float32))
+SQRT2   = np.sqrt(2.0)
+SQRT_PI = np.sqrt(np.pi)
+SQRT_2PI = np.sqrt(2. * np.pi)
+
+class SilentRandomSearch(kt.RandomSearch):
+    def run_trial(self, trial, *args, **kwargs):
+        kwargs['verbose'] = 0
+        return super().run_trial(trial, *args, **kwargs)
 
 @keras.saving.register_keras_serializable(package="CustomLosses", name="MaskedMSE")
 class MaskedMSE(Loss):
