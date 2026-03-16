@@ -18,6 +18,7 @@ if 'macOS' in platform.platform():
     output_dir = '/Volumes/ESSD/research/KiD_output/'
     bossppe_dir = '/Users/arthurhu/github/BOSS_PPE/'
     nc_dir = '/Users/arthurhu/github/BOSS_PPE/summary_ncs/'
+    param_dir = '/Users/arthurhu/github/BOSS_PPE/param_csv/'
 elif 'Linux' in platform.platform():
     hostname = socket.gethostname()
     if hostname == "simurgh":
@@ -237,7 +238,7 @@ def get_dics(output_dir, nikki, mconfig, n_init):
     vars_strs = []
     mconfig_dir = f"{output_dir}{nikki}/{mconfig}/"
     for i_init in range(n_init):
-        var_strs = sort_strings_by_number(os.listdir(mconfig_dir))
+        var_strs = sort_strings_by_number(filter_DS_Store(os.listdir(mconfig_dir)))
         vars_strs.append(var_strs)
         mconfig_dir += var_strs[0]
     
