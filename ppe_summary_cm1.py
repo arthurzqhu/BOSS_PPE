@@ -19,6 +19,7 @@ import pandas as pd
 import netCDF4 as nc
 import dask
 from dask.distributed import Client, progress
+import joblib
 
 import sys
 from tqdm.auto import tqdm
@@ -37,28 +38,28 @@ def main():
     # Configuration
     l_parallel = True
     l_testing = False
-    n_workers = 128
+    n_workers = 8
     n_test = n_workers
     l_pert = True
 
     # list of directories
 
-    # sim_config = [
-    #     'fullmp_dycoms_pcoal_newacoal_lhs',
+    # sim_configs = [
+    #     'fullmp_dycoms_pccs_blcoal_r1_test13_select'
     # ] # list of directories
     # target_sim_config = 'fullmp_dycoms_tgt_pert'
     # steady_state_hrs = 2
 
-    sim_config = [
-        'fullmp_rico_pcoal_fixadv_lhs',
+    sim_configs = [
+        'fullmp_rico_pccs_blcoal_r1_test13_select'
     ] # list of directories
     target_sim_config = 'fullmp_rico_tgt_pert'
-    steady_state_hrs = 6
+    steady_state_hrs = 5
 
-    lwp_threshold = 0.05 # equiv to 20 g/m2
+    lwp_threshold = 0.05 # equiv to 50 g/m2
     print('lwp_threshold:', lwp_threshold)
-    print('PPE directory:', sim_config)
-    print('target directory:', tgt_config)
+    print('PPE directory:', sim_configs)
+    print('target directory:', target_sim_config)
     
     if not os.path.exists(lp.nc_dir):
         os.makedirs(lp.nc_dir)
@@ -70,7 +71,7 @@ def main():
     datedir = 'ppe'
     target_datedir = 'target'
 
-    # mconfigs = os.listdir(cl.output_dir + datedir) # this line seems unused and might fail if sim_config is list, but it uses os.listdir(cl.output_dir + datedir) which is fine if datedir is empty string and output_dir is base. 
+    # mconfigs = os.listdir(cl.output_dir + datedir) # this line seems unused and might fail if sim_configs is list, but it uses os.listdir(cl.output_dir + datedir) which is fine if datedir is empty string and output_dir is base. 
     # But wait, cl.output_dir + datedir is just the date dir. 
     # mconfigs is unused in the script? Let's check. 
     # It is unused. I will leave it or comment it out if it causes issues.
@@ -80,12 +81,10 @@ def main():
     var_interest += [
                      'M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss', 
                      'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss', 
-                     'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', # 'decorr_length_ss',
-                     'prate_dm_ss', 'prate_ds_ss', 'precip_max_dm', 'prate_90th_ss',
+                     'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
+                     'prate_dm_ss', 'prate_ds_ss', 'prate_90th_ss',
                     ] # domain-mean path
-    # var_interest += ['M0_path_ss', 'M3_path_ss', 'M4_path_ss', 'M6_path_ss',] # domain-mean path
-    # var_interest += ['M0_per5lvl_ss', 'M3_per5lvl_ss', 'M4_per5lvl_ss', 'M6_per5lvl_ss']
-    # var_interest += ['sfM0_per5lvl_ss', 'sfM3_per5lvl_ss', 'sfM4_per5lvl_ss', 'sfM6_per5lvl_ss'] # domain-mean fluxes
+
 #     var_interest += [
 #             # 'sfM0_per5lvl', 'sfM3_per5lvl', 'sfM4_per5lvl', 'sfM6_per5lvl',
 #             'sfM0_dm_10m_ss',  'sfM3_dm_10m_ss',  'sfM4_dm_10m_ss',  'sfM6_dm_10m_ss',
@@ -94,11 +93,7 @@ def main():
 #             # 'sfM0_dm_500m_ss', 'sfM3_dm_500m_ss', 'sfM4_dm_500m_ss', 'sfM6_dm_500m_ss',
 # ]
 
-    # if 'dycoms' in sim_config:
-    #     var_interest += ['v_precip_onset']
-
     # Process data
-    
     file_info = {'dir': cl.output_dir, 
                 'date': datedir,
                 'vars_vn': vars_vn}
@@ -107,7 +102,7 @@ def main():
     if 'nc_dict' not in globals():
         nc_dict = {}
 
-    file_info.update({'sim_config': sim_config,
+    file_info.update({'sim_config': sim_configs,
                     'date': datedir,
                     'mp_config': train_mp})
     ppe_idx = cl.get_pert_idx(file_info)
@@ -119,14 +114,14 @@ def main():
         else:
             vars_strs = [vars_strs[0]]
 
-    # Update logic for filename if sim_config is list
-    sim_config_str = sim_config[-1] if isinstance(sim_config, list) else sim_config
+    # Update logic for filename if sim_configs is list
+    sim_config_str = sim_configs[-1] if isinstance(sim_configs, list) else sim_configs
     # If list, maybe join names or just use first one? User said "each directory... will still count from 1 to however many ensembles".
-    # The output filename uses `sim_config`. I should probably adjust this if it's a list. 
+    # The output filename uses `sim_configs`. I should probably adjust this if it's a list. 
     # But for now, let's just use the first one or a combined name.
     # The user didn't specify filename format change, only internal handling.
     # I'll use the first config name for the file or join them. 
-    # Let's use sim_config[0] for the filename prefix if it's a list.
+    # Let's use sim_configs[0] for the filename prefix if it's a list.
     
     if l_testing:
         nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{lwp_threshold}_test_N{n_test}.nc"
@@ -136,89 +131,164 @@ def main():
     if l_parallel:
         # On compute nodes, use processes (True) for library isolation (NetCDF is often not thread-safe).
         # We limit workers to avoid memory/IO pressure on the Lustre filesystem.
-        dask_scratch = os.path.join(os.environ.get('PSCRATCH', '/tmp'), 'dask-scratch-space')
-        
+        dask_scratch = os.path.join(os.environ.get('PSCRATCH', '~/tmp'), 'dask-scratch-space')
+
         # Using a reasonable number of workers (e.g., 16) even on a full compute node 
         # is usually safer and faster for I/O bound NetCDF tasks.
         client = Client(n_workers=n_workers, threads_per_worker=1, processes=True, local_directory=dask_scratch)
         print(f"Dask dashboard available at: {client.dashboard_link}")
         print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
 
-        tasks = []
-        for ippe in ppe_idx:
-            # We pass None as nc_dict so it returns a new one for each member
-            # ippe is now a dictionary
-            task = dask.delayed(cl.load_cm1)(
-                file_info, var_interest, steady_state_hrs, nc_dict=None, continuous_ic=True, 
-                ipert=ippe, lwp_threshold=lwp_threshold
-            )
-            tasks.append(task)
+    for sim_config in sim_configs:
+        train_jl_path = f"{cl.output_dir}/{datedir}/joblibs/{sim_config}.joblib"
+        if os.path.exists(train_jl_path):
+            print(f"Loading {sim_config} data from {train_jl_path}")
+            nc_dict[sim_config] = joblib.load(train_jl_path)
+            
+            # Load global attributes from the first valid member
+            ppe_idx_sim = [ippe for ippe in ppe_idx if (isinstance(ippe, dict) and ippe['sim_config'] == sim_config) or (not isinstance(ippe, dict) and sim_config == sim_configs[0])]
+            if ppe_idx_sim:
+                print(f"Loading global attributes for {sim_config}")
+                finfo_attr = file_info.copy()
+                finfo_attr['sim_config'] = sim_config
+                cl.load_cm1_attrs(finfo_attr, nc_dict=nc_dict, ipert=ppe_idx_sim[0], continuous_ic=True)
+            
+        else: 
+            ppe_idx_sim = [ippe for ippe in ppe_idx if (isinstance(ippe, dict) and ippe['sim_config'] == sim_config) or (not isinstance(ippe, dict) and sim_config == sim_configs[0])]
+            
+            if l_parallel:
+                tasks = []
+                for ippe in ppe_idx_sim:
+                    # We pass None as nc_dict so it returns a new one for each member
+                    # ippe is now a dictionary
+                    task = dask.delayed(cl.load_cm1)(
+                        file_info, var_interest, steady_state_hrs, nc_dict=None, continuous_ic=True, 
+                        ipert=ippe, lwp_threshold=lwp_threshold
+                    )
+                    tasks.append(task)
 
-        print("Computing PPE data in parallel...")
-        futures = client.compute(tasks)
-        progress(futures)
-        results = client.gather(futures)
+                print(f"Computing PPE data for {sim_config} in parallel...")
+                futures = client.compute(tasks)
+                progress(futures)
+                results = client.gather(futures)
 
-        for r in tqdm(results, desc='merging PPE results'):
-            cl.deep_merge(nc_dict, r)
-    else:
-        pbar = tqdm(ppe_idx, desc='loading BOSS data')
-        for ippe in pbar:
-            cl.load_cm1(file_info, var_interest, steady_state_hrs, nc_dict=nc_dict, continuous_ic=True, ipert=ippe, lwp_threshold=lwp_threshold, pbar=pbar)
+                for r in tqdm(results, desc=f'merging PPE results for {sim_config}'):
+                    cl.deep_merge(nc_dict, r)
+
+            else:
+                pbar = tqdm(ppe_idx_sim, desc=f'loading BOSS data for {sim_config}')
+                for ippe in pbar:
+                    cl.load_cm1(file_info, var_interest, steady_state_hrs, nc_dict=nc_dict, continuous_ic=True, ipert=ippe, lwp_threshold=lwp_threshold, pbar=pbar)
+
+            joblib.dump(nc_dict[sim_config], train_jl_path)
+            print(f"Dictionary saved to {train_jl_path}")
 
     # Load target data
     print("\nLoading target data...")
-    if l_parallel:
-        tasks = []
-        for initcond_combo in itertools.product(*vars_strs):
-            # Create a separate file_info for each combo to avoid mutation issues
-            finfo_target = file_info.copy()
-            finfo_target.update({
-                'sim_config': tgt_config,
-                'vars_str': list(initcond_combo),
-                'date': target_datedir,
-                'mp_config': target_mp,
-                'l_pert': l_pert
-            })
-            if l_pert:
+    tgt_jl_path = f"{cl.output_dir}/{target_datedir}/joblibs/{target_sim_config}.joblib"
+    vars_to_load = var_interest
+    if os.path.exists(tgt_jl_path):
+        print(f"Loading target data from {tgt_jl_path}")
+        nc_dict[target_sim_config] = joblib.load(tgt_jl_path)
+        
+        # Load global attributes
+        print(f"Loading global attributes for {target_sim_config}")
+        finfo_target = file_info.copy()
+        first_combo = list(itertools.product(*vars_strs))[0]
+        finfo_target.update({
+            'sim_config': target_sim_config,
+            'vars_str': list(first_combo),
+            'date': target_datedir,
+            'mp_config': target_mp,
+            'l_pert': l_pert
+        })
+        if l_pert:
+            try:
                 target_pert_idx = cl.get_pert_idx(finfo_target)
-                for ipert in target_pert_idx:
+                if target_pert_idx:
+                    cl.load_cm1_attrs(finfo_target, nc_dict=nc_dict, ipert=target_pert_idx[0], continuous_ic=False)
+            except Exception as e:
+                print(f"Could not load target global attributes (pert): {e}")
+        else:
+            try:
+                cl.load_cm1_attrs(finfo_target, nc_dict=nc_dict, continuous_ic=False)
+            except Exception as e:
+                print(f"Could not load target global attributes (no pert): {e}")
+        
+        # Check if all variables exist
+        try:
+            first_ic = "".join(list(itertools.product(*vars_strs))[0])
+            if l_pert:
+                first_pert = list(nc_dict[target_sim_config][target_mp][first_ic].keys())[0]
+                existing_vars = nc_dict[target_sim_config][target_mp][first_ic][first_pert].keys()
+            else:
+                existing_vars = nc_dict[target_sim_config][target_mp][first_ic].keys()
+            vars_to_load = [v for v in var_interest if v not in existing_vars]
+        except (KeyError, IndexError):
+            vars_to_load = var_interest
+
+    if vars_to_load:
+        if vars_to_load != var_interest:
+            print(f"Missing variables in target data: {vars_to_load}. Loading missing ones...")
+        else:
+            print(f"Target data not found or being fully reloaded at {tgt_jl_path}")
+
+        if l_parallel:
+            tasks = []
+            for initcond_combo in itertools.product(*vars_strs):
+                finfo_target = file_info.copy()
+                finfo_target.update({
+                    'sim_config': target_sim_config,
+                    'vars_str': list(initcond_combo),
+                    'date': target_datedir,
+                    'mp_config': target_mp,
+                    'l_pert': l_pert
+                })
+                if l_pert:
+                    target_pert_idx = cl.get_pert_idx(finfo_target)
+                    for ipert in target_pert_idx:
+                        task = dask.delayed(cl.load_cm1)(
+                            finfo_target, vars_to_load, steady_state_hrs, nc_dict=None, continuous_ic=False, 
+                            ipert=ipert, lwp_threshold=lwp_threshold
+                        )
+                        tasks.append(task)
+                else:
                     task = dask.delayed(cl.load_cm1)(
-                        finfo_target, var_interest, steady_state_hrs, nc_dict=None, continuous_ic=False, 
-                        ipert=ipert, lwp_threshold=lwp_threshold
+                        finfo_target, vars_to_load, steady_state_hrs, nc_dict=None, continuous_ic=False, 
+                        lwp_threshold=lwp_threshold
                     )
                     tasks.append(task)
-            else:
-                task = dask.delayed(cl.load_cm1)(
-                    finfo_target, var_interest, steady_state_hrs, nc_dict=None, continuous_ic=False, 
-                    lwp_threshold=lwp_threshold
-                )
-                tasks.append(task)
 
-        print("Computing target data in parallel...")
-        futures = client.compute(tasks)
-        progress(futures)
-        results = client.gather(futures)
+            print(f"Computing {len(vars_to_load)} target variables in parallel...")
+            futures = client.compute(tasks)
+            progress(futures)
+            results = client.gather(futures)
+            
+            for r in tqdm(results, desc='merging target results'):
+                cl.deep_merge(nc_dict, r)
+        else:
+            pbar = tqdm(itertools.product(*vars_strs), desc='loading BIN data')
+            for initcond_combo in pbar:
+                finfo_target = file_info.copy()
+                finfo_target.update({
+                    'sim_config': target_sim_config,
+                    'vars_str': list(initcond_combo),
+                    'date': target_datedir,
+                    'mp_config': target_mp,
+                    'l_pert': l_pert
+                })
+                if l_pert:
+                    target_pert_idx = cl.get_pert_idx(finfo_target)
+                    for ipert in target_pert_idx:
+                        cl.load_cm1(finfo_target, vars_to_load, steady_state_hrs, nc_dict=nc_dict, continuous_ic=False, ipert=ipert, lwp_threshold=lwp_threshold, pbar=pbar)
+                else:
+                    cl.load_cm1(finfo_target, vars_to_load, steady_state_hrs, nc_dict=nc_dict, continuous_ic=False, lwp_threshold=lwp_threshold, pbar=pbar)
         
-        for r in tqdm(results, desc='merging target results'):
-            cl.deep_merge(nc_dict, r)
-        
-        # Shutdown client
-        client.close()
+        # Save updated nc_dict to joblib
+        joblib.dump(nc_dict[target_sim_config], tgt_jl_path)
     else:
-        pbar = tqdm(itertools.product(*vars_strs), desc='loading BIN data')
-        for initcond_combo in pbar:
-            file_info.update({'sim_config': target_sim_config,
-                            'vars_str': list(initcond_combo),
-                            'date': target_datedir,
-                            'mp_config': target_mp,
-                            'l_pert': l_pert})
-            if l_pert:
-                target_pert_idx = cl.get_pert_idx(file_info)
-                for ipert in target_pert_idx:
-                    cl.load_cm1(file_info, var_interest, steady_state_hrs, nc_dict=nc_dict, continuous_ic=False, ipert=ipert, lwp_threshold=lwp_threshold, pbar=pbar)
-            else:
-                cl.load_cm1(file_info, var_interest, steady_state_hrs, nc_dict=nc_dict, continuous_ic=False, lwp_threshold=lwp_threshold, pbar=pbar)
+        print("All variables of interest already exist in target data.")
+
 
     ncase = 1
     ncase_respective = [len(i) for i in vars_strs]
@@ -254,7 +324,7 @@ def main():
                         
     # Processing PPE data
     print("\nProcessing PPE data...")
-    ncvars, dims = process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, datedir, sim_config, train_mp)
+    ncvars, dims = process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, datedir, sim_configs, train_mp)
     
     # Set up global attributes
     global_attrs['thresholds_eff0'] = []
@@ -379,7 +449,7 @@ def create_nc_variables_structure(nc_dict, vars_vn, var_interest, l_pert):
     
     return ncvars
 
-def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, datedir, sim_config, train_mp):
+def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, datedir, sim_configs, train_mp):
     """Load PPE data with memory cleanup"""
     ic_str = 'cic'
     
@@ -389,12 +459,11 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, date
         if isinstance(ppe_item, dict):
             current_config = ppe_item['sim_config']
             member = ppe_item['member']
-            # global_id = ppe_item['global_id']
-            ippe_idx = ppe_item['global_id'] # Use global_id as index
+            global_id = ppe_item['global_id']
         else:
-            current_config = sim_config[0] if isinstance(sim_config, list) else sim_config
+            current_config = sim_configs[0] if isinstance(sim_configs, list) else sim_configs
             member = str(ppe_item)
-            ippe_idx = i
+            global_id = int(member) if member.isdigit() else i
 
         # Construct path using the correct config
         param_df = pd.read_csv(f"{cl.output_dir}{datedir}/{current_config}/{train_mp}/{member}/params.csv")
@@ -433,9 +502,9 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, date
 
         # Store parameters
         if is_vertical:
-            ncvars['params_PPE']['data'][ippe_idx, :] = np.array(param_df.iloc[:, 1].to_numpy())
+            ncvars['params_PPE']['data'][i, :] = np.array(param_df.iloc[:, 1].to_numpy())
         else:
-            ncvars['params_PPE']['data'][ippe_idx, :] = np.array(param_df)
+            ncvars['params_PPE']['data'][i, :] = np.array(param_df)
         
         # Store initial conditions
         for var_vn in vars_vn:
@@ -443,7 +512,7 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, date
                 ncvars[var_vn + '_PPE']['data'] = np.zeros((len(ppe_idx),))
             
             # Retrieve value from nc_dict using global dict key
-            ncvars[var_vn + '_PPE']['data'][ippe_idx] = nc_dict[current_config][train_mp][ic_str][ippe_idx][var_vn]
+            ncvars[var_vn + '_PPE']['data'][i] = nc_dict[current_config][train_mp][ic_str][global_id][var_vn]
     
     # Load summary variables
     for ivar in var_interest:
@@ -455,7 +524,7 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, date
                 item_config = ppe_item['sim_config']
             else:
                 idx = int(ppe_item)
-                item_config = sim_config[0] if isinstance(sim_config, list) else sim_config
+                item_config = sim_configs[0] if isinstance(sim_configs, list) else sim_configs
             data_list.append(nc_dict[item_config][train_mp][ic_str][idx][ivar]['value'])
             
         ncvars['ppe_' + ivar]['data'] = np.array(data_list)
