@@ -42,19 +42,22 @@ def main():
     n_test = n_workers
     l_pert = True
 
+    dycoms_ppe_basename = 'fullmp_dycoms_pccs_smmtrans_select'
+    rico_ppe_basename = dycoms_ppe_basename.replace('dycoms','rico')
+
     # list of directories
 
-    # sim_configs = [
-    #     'fullmp_dycoms_pccs_blcoal_r1_test13_select'
-    # ] # list of directories
-    # target_sim_config = 'fullmp_dycoms_tgt_pert'
-    # steady_state_hrs = 2
-
     sim_configs = [
-        'fullmp_rico_pccs_blcoal_r1_test13_select'
+        dycoms_ppe_basename,
     ] # list of directories
-    target_sim_config = 'fullmp_rico_tgt_pert'
-    steady_state_hrs = 5
+    target_sim_config = 'fullmp_dycoms_tgt_pert'
+    steady_state_hrs = 2
+
+    # sim_configs = [
+    #     rico_ppe_basename,
+    # ] # list of directories
+    # target_sim_config = 'fullmp_rico_tgt_pert'
+    # steady_state_hrs = 5
 
     lwp_threshold = 0.05 # equiv to 50 g/m2
     print('lwp_threshold:', lwp_threshold)
@@ -66,10 +69,14 @@ def main():
     l_cic = True
     
     n_init = 1
-    tgt_mp = 'BIN-TAU'
+    target_mp = 'BIN-TAU'
     train_mp = 'SLC-BOSS'
     datedir = 'ppe'
     target_datedir = 'target'
+    # CSV listing parameters actually perturbed (first column = param names);
+    # only used when sim_config_str ends with '_select'
+    select_params_csv = os.path.join(os.path.dirname(__file__),
+                                     'perturbation_design/test21_perturbation_parameters.csv')
 
     # mconfigs = os.listdir(cl.output_dir + datedir) # this line seems unused and might fail if sim_configs is list, but it uses os.listdir(cl.output_dir + datedir) which is fine if datedir is empty string and output_dir is base. 
     # But wait, cl.output_dir + datedir is just the date dir. 
@@ -325,6 +332,20 @@ def main():
     # Processing PPE data
     print("\nProcessing PPE data...")
     ncvars, dims = process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, datedir, sim_configs, train_mp)
+
+    # If this is a '_select' PPE, record which parameters are actually perturbed
+    if '_select' in sim_config_str:
+        if os.path.exists(select_params_csv):
+            sel_df = pd.read_csv(select_params_csv)
+            sel_param_names = sel_df.iloc[:, 0].to_numpy()
+            all_param_names = ncvars['param_names']['data']
+            # Find index of each selected param in the full param_names array
+            name_to_idx = {name: idx for idx, name in enumerate(all_param_names)}
+            select_params_idx = np.sort(np.array([name_to_idx[n] for n in sel_param_names if n in name_to_idx]))
+            global_attrs['select_params_idx'] = select_params_idx
+            print(f"select_params_idx: {select_params_idx}")
+        else:
+            print(f"Warning: select_params_csv '{select_params_csv}' not found; skipping select_params_idx.")
     
     # Set up global attributes
     global_attrs['thresholds_eff0'] = []

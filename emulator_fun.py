@@ -43,22 +43,29 @@ def get_param_interest_idx(dataset, return_perturbed_groupname=False):
 
 def get_params(basepath, filename):
     """
-    Get the parameters of interest
+    Get the parameters of interest.
+    If the netCDF file has a 'select_params_idx' global attribute (written for
+    '_select' PPE runs), those indices are used to slice params_PPE instead of
+    the default param_interest_idx derived from is_perturbed_* flags.
     """
     dataset = nc.Dataset(basepath + filename, mode='r')
     vars_vn = dataset.getncattr('init_var')
-    
+
     param_interest_idx = np.concatenate(get_param_interest_idx(dataset))
+
+    # Override with select_params_idx if present
+    if 'select_params_idx' in dataset.ncattrs():
+        param_interest_idx = np.array(dataset.getncattr('select_params_idx'), dtype=int)
 
     if isinstance(vars_vn, str):
         vars_vn = [vars_vn]
     PPE_vns = [istr + "_PPE" for istr in vars_vn]
     ppe_initcon_matrix = []
-    
+
     for PPE_vn in PPE_vns:
         if PPE_vn in dataset.variables:
             ppe_initcon_matrix.append(np.expand_dims(dataset.variables[PPE_vn][:], axis=1))
-    
+
     params_PPE = dataset.variables['params_PPE'][:][:, param_interest_idx]
     ppe_initcon_matrix.append(params_PPE)
     params_train = np.concatenate(ppe_initcon_matrix, axis=1)
