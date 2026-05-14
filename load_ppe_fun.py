@@ -5,6 +5,7 @@ import netCDF4 as nc
 from glob import glob
 import platform
 import socket
+from pathlib import Path
 
 # should probably move these constants to a separate file
 # constants: {{{
@@ -236,12 +237,11 @@ def funnel_momxy(file_list, momxy):
 def get_dics(output_dir, nikki, mconfig, n_init): 
     # get discrete initial conditions from BIN
     vars_strs = []
-    mconfig_dir = f"{output_dir}{nikki}/{mconfig}/"
+    mconfig_dir = Path(f"{output_dir}{nikki}/{mconfig}/")
     for i_init in range(n_init):
-        var_strs = sort_strings_by_number(filter_DS_Store(os.listdir(mconfig_dir)))
+        var_strs = sort_strings_by_number([x.name for x in mconfig_dir.iterdir() if x.is_dir()])
         vars_strs.append(var_strs)
-        mconfig_dir += var_strs[0]
-    
+
     vars_vn = [re.search(r'^[A-Z]*[a-z]*', istr[0])[0] for istr in vars_strs]
     return vars_strs, vars_vn
 

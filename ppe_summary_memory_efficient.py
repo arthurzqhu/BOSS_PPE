@@ -19,12 +19,12 @@ def main():
     """Main function to process PPE data with memory efficiency"""
     # Configuration
     vnum = '0001'
-    nikki = '2025-09-16'
+    nikki = '2025-10-10'
     target_nikki = 'target'
     momxy = '46'
     
-    ppe_config = 'condevap_ppe'
-    target_simconfig = 'condevap'
+    ppe_config = 'condcoal'
+    target_simconfig = 'condcoal_dt5'
     
     if not os.path.exists(lp.nc_dir):
         os.makedirs(lp.nc_dir)
@@ -40,12 +40,11 @@ def main():
 
     # snapshot_var_idx = [4, 86, 119, 120] # LWP, LNP, Mx_path, My_path
     # snapshot_var_idx = [86] # LNP, Mx_path, My_path
-    snapshot_var_idx = [115, 116, 117, 118] # M3, M0, Mx, My
+    # snapshot_var_idx = [115, 116, 117, 118] # M3, M0, Mx, My
     # snapshot_var_idx = [116, 117, 118] # M0, Mx, My
     # snapshot_var_idx = [135, 136, 137, 138]
-    # snapshot_var_idx = []
-    # summary_var_idx = [144, 145, 146, 147]
-    summary_var_idx = []
+    snapshot_var_idx = []
+    summary_var_idx = [144, 146, 147]
     # summary_var_idx = [95, 107, 121, 122]
     # snapshot_var_idx = [21, 97, 98, 99] # dm3_sed, dm0_sed, dm6_sed, dm9_sed
     # snapshot_var_idx = [21, 97, 143, 98] # dm3_sed, dm0_sed, dm4_sed, dm6_sed

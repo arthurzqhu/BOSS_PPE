@@ -22,8 +22,8 @@ ncol_max = 4
 T = 21600.0
 
 softplus = lambda x: np.log(1 + np.exp(x))
-smooth_linlog = lambda y, eff0: eff0 * np.arcsinh(y/eff0)
-inv_smooth_linlog = lambda y, eff0: eff0 * np.sinh(y/eff0)
+smooth_linlog = lambda y, eff0: eff0 * np.arcsinh(jnp.clip(y, a_min=1e-35) / eff0)
+inv_smooth_linlog = lambda y, eff0: eff0 * np.sinh(jnp.clip(y / eff0, a_min=-50, a_max=50))
 boxcox = lambda y, lam: (y**lam - 1)/lam if lam != 0 else np.log(y)
 blowup_tan = lambda t: np.tan(np.pi * (t / T - 0.5))
 blowup_tan_inv = lambda y: T * (0.5 + (1.0/np.pi) * np.arctan(y))
@@ -130,10 +130,10 @@ def inverse_transform_data(y, transform_method, scaler, eff0=None):
     return y_with_possible_nan
 
 
-def get_train_val_tgt_data(basepath, filename, param_train, transform_methods, 
+def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
                            l_multi_output=False, test_size=0.2, random_state=1,
                            set_nan_to_neg1001=True, var_select=None, var_limit_zero=None,
-                           throw_away_ratio=0.):
+                           throw_away_ratio=0., hurdle_threshold=0.3):
     scalers = {}
     ppe_info = {}
     dataset = nc.Dataset(basepath + filename, mode='r')
@@ -288,6 +288,38 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
                 dat = np.reshape(dat, (ppe_info['ncases'], ppe_info['npert']))
             tgt_data.append(dat)
 
+    # Detect zero-inflated (hurdle) variables and compute transformed-zero values
+    hurdle_vars = set()
+    zero_fracs = []
+    transformed_zeros = []
+    for ivar, varcon in enumerate(var_constraints):
+        zero_frac = 1.0 - np.mean(ppe_var_presence[ivar])
+        zero_fracs.append(zero_frac)
+        if zero_frac > hurdle_threshold:
+            hurdle_vars.add(varcon)
+        # Compute the transformed value of zero for hurdle combination
+        eff0 = eff0s[ivar] if ivar < len(eff0s) else 0
+        if isinstance(transform_methods, str):
+            tm = transform_methods
+        else:
+            tm = transform_methods[ivar]
+        if 'asinh' in tm:
+            zero_normed = smooth_linlog(np.array([[0.0]]), eff0)
+        else:
+            zero_normed = np.array([[0.0]])
+        if ivar < len(scalers['y']):
+            transformed_zeros.append(float(scalers['y'][ivar].transform(zero_normed).flatten()[0]))
+        else:
+            transformed_zeros.append(0.0)
+    ppe_info['hurdle_vars'] = hurdle_vars
+    ppe_info['zero_fracs'] = zero_fracs
+    ppe_info['transformed_zeros'] = transformed_zeros
+    if hurdle_vars:
+        print(f"Hurdle variables (>{hurdle_threshold*100:.0f}% zeros): {sorted(hurdle_vars)}")
+        for ivar, varcon in enumerate(var_constraints):
+            if varcon in hurdle_vars:
+                print(f"  {varcon}: {zero_fracs[ivar]*100:.1f}% zeros, transformed_zero={transformed_zeros[ivar]:.4f}")
+
     for ivar, (ppe_varr_tmp, ppe_varp_tmp) in enumerate(zip(ppe_data, ppe_var_presence)):
         varcon = var_constraints[ivar]
         if test_size > 0:
@@ -304,32 +336,38 @@ def get_train_val_tgt_data(basepath, filename, param_train, transform_methods,
         y_train[varcon] = y_train_rawv_single_tmp
         y_val[varcon] = y_val_rawv_single_tmp
 
-        if l_multi_output:
-            if test_size > 0:
-                x_train, x_val, y_train_wpresence_single, y_val_wpresence_single = \
-                    mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
-            else:
-                x_train = x_all
-                x_val = None
-                y_train_wpresence_single = ppe_varp_tmp
-                y_val_wpresence_single = None
-            y_train[f'presence_{varcon}'] = y_train_wpresence_single
-            y_val[f'presence_{varcon}'] = y_val_wpresence_single
+        # Always store presence data (needed for hurdle GP training)
+        if test_size > 0:
+            _, _, y_train_wpresence_single, y_val_wpresence_single = \
+                mod_sec.train_test_split(x_all, ppe_varp_tmp, test_size=test_size, random_state=random_state)
+        else:
+            y_train_wpresence_single = ppe_varp_tmp
+            y_val_wpresence_single = None
+        y_train[f'presence_{varcon}'] = y_train_wpresence_single
+        y_val[f'presence_{varcon}'] = y_val_wpresence_single
     
     dataset.close()
     return x_train, x_val, y_train, y_val, tgt_data, tgt_unc, tgt_initvar_matrix, ppe_info, scalers
 
+
+def _predict_gp(theta, x_train_valid, y_train_valid, x_val):
+    """Build GP, condition on training data, predict at x_val. Returns (mean, variance)."""
+    gp = tu_jax.build_gp(theta, x_train_valid)
+    cond_gp = gp.condition(y_train_valid, jnp.asarray(x_val)).gp
+    return np.array(cond_gp.loc), np.array(cond_gp.variance)
 
 def get_model_results_gp(models, x_val, y_val, ppe_info, transform_methods, scalers, x_train, y_train_dict):
     eff0s = ppe_info['eff0s']
     nvar = ppe_info['nvar']
     nobs = ppe_info['nobs']
     var_constraints = ppe_info['var_constraints']
-    
+    h_vars = ppe_info.get('hurdle_vars', set())
+    t_zeros = ppe_info.get('transformed_zeros', [0.0] * nvar)
+
+    y_mdl_unc_inv = []
+    y_mdl_unc = []
     y_mdl_inv = []
     y_mdl = []
-    y_mdl_unc = []
-    
     y_tgt_inv = []
     y_tgt = []
 
@@ -338,39 +376,70 @@ def get_model_results_gp(models, x_val, y_val, ppe_info, transform_methods, scal
             transform_method = transform_methods
         else:
             transform_method = transform_methods[ivar]
-            
+
         y_val_raw = y_val[varcon][:, :nobs[ivar]]
         y_tgt_inv.append(inverse_transform_data(y_val_raw, transform_method, scalers['y'][ivar], eff0s[ivar]))
         y_tgt.append(y_val_raw)
 
-        theta = models[varcon]
         y_t = y_train_dict[varcon][:, :nobs[ivar]]
-        
-        gp = tu_jax.build_gp(theta, jnp.asarray(x_train))
-        y_t_1d = jnp.asarray(y_t).flatten()
-        cond_gp = gp.condition(y_t_1d, jnp.asarray(x_val)).gp
-        loc = np.array(cond_gp.loc)
-        var = np.array(cond_gp.variance)
-        
+        y_t_1d = jnp.asarray(y_t)[:, 0]
+        valid_mask = np.array(y_t_1d) > -999
+
+        if varcon in h_vars:
+            # Presence GP prediction
+            presence_targets = y_train_dict[f'presence_{varcon}'][:, 0].astype(np.float64)
+            p_x = jnp.asarray(x_train)[valid_mask]
+            p_y = jnp.asarray(presence_targets[valid_mask])
+            p_loc, p_var = _predict_gp(models[f'presence_{varcon}'], p_x, p_y, x_val)
+            p_loc = np.clip(p_loc, 0.01, 0.99)
+            p_var = np.clip(p_var, 1e-12, None)
+
+            # Value-given-present GP prediction
+            present_mask = valid_mask & (np.array(presence_targets) > 0.5)
+            v_x = jnp.asarray(x_train)[present_mask]
+            v_y = y_t_1d[present_mask]
+            v_loc, v_var = _predict_gp(models[f'value_{varcon}'], v_x, v_y, x_val)
+
+            # Combine: E[Y] = P * V + (1-P) * tz
+            tz = t_zeros[ivar]
+            loc = p_loc * v_loc + (1.0 - p_loc) * tz
+            # Var[Y] = P^2 * Var[V] + (V - tz)^2 * Var[P] + Var[P] * Var[V]
+            var = p_loc**2 * v_var + (v_loc - tz)**2 * p_var + p_var * v_var
+        else:
+            # Standard single GP
+            x_train_valid = jnp.asarray(x_train)[valid_mask]
+            y_t_valid = y_t_1d[valid_mask]
+            loc, var = _predict_gp(models[varcon], x_train_valid, y_t_valid, x_val)
+
         y_mdl.append(loc)
-        y_mdl_unc.append(np.sqrt(var))
-        
+        unc = np.sqrt(np.clip(var, a_min=1e-12, a_max=None))
+        y_mdl_unc.append(unc)
+
         y_mdl_inv.append(inverse_transform_data(loc, transform_method, scalers['y'][ivar], eff0s[ivar]))
+
+        # Propagate uncertainty to raw space using finite difference
+        y_up_inv = inverse_transform_data(loc + unc, transform_method, scalers['y'][ivar], eff0s[ivar])
+        y_down_inv = inverse_transform_data(loc - unc, transform_method, scalers['y'][ivar], eff0s[ivar])
+        y_mdl_unc_inv.append(np.abs(y_up_inv - y_down_inv) / 2.0)
 
     for var_tmp in y_tgt:
         var_tmp[var_tmp < -999] = np.nan
-        
-    return y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc
+
+    return y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc, y_mdl_unc_inv
 
 def apply_model_gp(models, x_input, x_train, y_train_dict, var_constraints):
     outputs = {}
     for varcon in var_constraints:
         theta = models[varcon]
-        y_t = y_train_dict[varcon] 
-        
-        gp = tu_jax.build_gp(theta, jnp.asarray(x_train))
-        y_t_1d = jnp.asarray(y_t).flatten()
-        cond_gp = gp.condition(y_t_1d, jnp.asarray(x_input)).gp
+        y_t = y_train_dict[varcon]
+
+        y_t_1d = jnp.asarray(y_t)[:, 0]
+        valid_mask = np.array(y_t_1d) > -999
+        x_train_valid = jnp.asarray(x_train)[valid_mask]
+        y_t_valid = y_t_1d[valid_mask]
+
+        gp = tu_jax.build_gp(theta, x_train_valid)
+        cond_gp = gp.condition(y_t_valid, jnp.asarray(x_input)).gp
         
         loc = np.array(cond_gp.loc)
         var = np.array(cond_gp.variance)
@@ -378,7 +447,7 @@ def apply_model_gp(models, x_input, x_train, y_train_dict, var_constraints):
         
     return outputs
 
-def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False):
+def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False, prefix="", y_mdl_unc=None):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
     
@@ -402,8 +471,13 @@ def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False):
             axs[i].text(0.5, 0.5, 'No Data', transform=axs[i].transAxes, ha='center')
             continue
 
-        axs[i].set_aspect('equal')
-        axs[i].scatter(xt, xp, alpha=0.1)
+        if y_mdl_unc is not None:
+            axs[i].set_aspect('equal')
+            yunc = np.array(y_mdl_unc[i]).flatten()[v]
+            axs[i].errorbar(xt, xp, yerr=yunc, fmt='o', alpha=0.3, markersize=1, elinewidth=0.5, capsize=0)
+        else:
+            axs[i].set_aspect('equal')
+            axs[i].scatter(xt, xp, alpha=0.1)
         axs[i].set_title(var_constraints[i])
         if title == 'Raw values' and l_plot_log:
             # Avoid setting log scale if we have non-positive values
@@ -445,15 +519,16 @@ def plot_scatter(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False):
     except Exception as e:
         print(f"Warning: tight_layout failed for {title}: {e}")
     if savefig:
-        plt.savefig(f'plots/emulator_scatter_{title.replace(" ", "_")}.pdf')
+        filename = f"{prefix}_" if prefix else ""
+        plt.savefig(f'plots/ppe/emulator_scatter_{filename}{title.replace(" ", "_")}.pdf')
 
-def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, title, ppe_info, savefig=False):
+def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, title, ppe_info, savefig=False, prefix=""):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
 
     ncol = min(ncol_max, nvar)
     nrow = int(np.ceil(nvar/ncol_max))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2), sharex=True)
+    fig, axs = plt.subplots(nrow, ncol, figsize=(14, nrow*3))
     if isinstance(axs, np.ndarray):
         axs = axs.flatten()
     else:
@@ -475,8 +550,19 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, title, ppe_info, savefig=False):
         y_tmp = yp_tmp[vpoint]
         unc_tmp = yunc_tmp[vpoint]
         
-        xbins = np.linspace(np.min(x_tmp), np.max(x_tmp), 51)
-        ybins = np.linspace(np.min(y_tmp), np.max(y_tmp), 61)
+        xmin, xmax = np.min(x_tmp), np.max(x_tmp)
+        ymin, ymax = np.min(y_tmp), np.max(y_tmp)
+        
+        # Robustly handle degenerate ranges
+        if xmin == xmax:
+            xmin -= 0.1
+            xmax += 0.1
+        if ymin == ymax:
+            ymin -= 0.1
+            ymax += 0.1
+            
+        xbins = np.linspace(xmin, xmax, 51)
+        ybins = np.linspace(ymin, ymax, 61)
 
         xidx_tmp = np.digitize(x_tmp, xbins) - 1
         yidx_tmp = np.digitize(y_tmp, ybins) - 1
@@ -484,9 +570,8 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, title, ppe_info, savefig=False):
         mean_unc = np.full((len(xbins)-1, len(ybins)-1), np.nan)
         counts = np.zeros_like(mean_unc)
 
-        flat_idx_tmp = xidx_tmp * mean_unc.shape[1] + yidx_tmp
         valid = (xidx_tmp >= 0) & (xidx_tmp < mean_unc.shape[0]) & (yidx_tmp >= 0) & (yidx_tmp < mean_unc.shape[1])
-        flat_idx_tmp = flat_idx_tmp[valid]
+        flat_idx_tmp = xidx_tmp[valid] * mean_unc.shape[1] + yidx_tmp[valid]
         unc_valid_tmp = unc_tmp[valid]
 
         sum_unc = np.bincount(flat_idx_tmp, weights=unc_valid_tmp, minlength=mean_unc.size)
@@ -498,51 +583,37 @@ def plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, title, ppe_info, savefig=False):
         counts[:,:] = count_unc.reshape(mean_unc.shape)
 
         pcm = axs[i].pcolor(xbins, ybins, mean_unc.T, cmap='magma', shading='auto')
+        plt.colorbar(pcm, ax=axs[i], label='std dev')
 
-        # Robustly get limits
-        xlim = axs[i].get_xlim()
-        ylim = axs[i].get_ylim()
-        
-        # Filter out non-finite values from limits
-        valid_lims = [l for l in list(xlim) + list(ylim) if np.isfinite(l)]
-        if len(valid_lims) >= 2:
-            ax_min = max([xlim[0], ylim[0]])
-            ax_max = min([xlim[1], ylim[1]])
-            
-            # Use edges if limits are degenerate
-            if not np.isfinite(ax_min) or not np.isfinite(ax_max) or ax_min >= ax_max:
-                ax_min = min(xbins.min(), ybins.min())
-                ax_max = max(xbins.max(), ybins.max())
-
-            if ax_min == ax_max:
-                ax_min -= 0.1
-                ax_max += 0.1
-
-            if np.isfinite(ax_min) and np.isfinite(ax_max) and ax_min < ax_max:
-                axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
-                axs[i].set_xlim(ax_min, ax_max)
-                axs[i].set_ylim(ax_min, ax_max)
+        ax_min = min(xmin, ymin)
+        ax_max = max(xmax, ymax)
+        if np.isfinite(ax_min) and np.isfinite(ax_max) and ax_min < ax_max:
+            axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange', linestyle='--')
+            axs[i].set_xlim(ax_min, ax_max)
+            axs[i].set_ylim(ax_min, ax_max)
 
         axs[i].set_title(var_constraints[i])
-        axs[i].set_xlabel('log10 BOSS output')
-        axs[i].set_ylabel('log10 emulator output')
+        suffix = " (normalized)" if title == "Normalized" else ""
+        axs[i].set_xlabel('target' + suffix)
+        axs[i].set_ylabel('emulator' + suffix)
 
-    fig.suptitle(title)
+    fig.suptitle(f'Uncertainty: {title}')
     try:
         fig.tight_layout()
     except Exception as e:
-        print(f"Warning: tight_layout failed for {title}: {e}")
+        print(f"Warning: tight_layout failed: {e}")
     if savefig:
-        plt.savefig(f'plots/emulator_2dhist_unc_{title.replace(" ", "_")}.pdf')
+        filename = f"{prefix}_" if prefix else ""
+        plt.savefig(f'plots/ppe/emulator_2dhist_unc_{filename}{title.replace(" ", "_")}.pdf')
         
 
-def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False):
+def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False, prefix=""):
     nvar = ppe_info['nvar']
     var_constraints = ppe_info['var_constraints']
 
     ncol = min(ncol_max, nvar)
     nrow = int(np.ceil(nvar/ncol_max))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(12, nrow*2))
+    fig, axs = plt.subplots(nrow, ncol, figsize=(14, nrow*3))
     if isinstance(axs, np.ndarray):
         axs = axs.flatten()
     else:
@@ -575,34 +646,24 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False):
             hist = np.log10(np.maximum(hist, hist_min)).T
         else:
             hist = np.maximum(hist, hist_min).T
-        pclr_hist = axs[i].pcolor(xedges, yedges, hist, cmap='viridis', shading='auto')
+        pcm = axs[i].pcolor(xedges, yedges, hist, cmap='viridis', shading='auto')
+        plt.colorbar(pcm, ax=axs[i], label='density')
 
-        xlim = axs[i].get_xlim()
-        ylim = axs[i].get_ylim()
-        
-        # Filter out non-finite values from limits
-        valid_lims = [l for l in list(xlim) + list(ylim) if np.isfinite(l)]
-        if len(valid_lims) >= 2:
-            ax_min = max([xlim[0], ylim[0]])
-            ax_max = min([xlim[1], ylim[1]])
-            
-            # Use edges if limits are degenerate
-            if not np.isfinite(ax_min) or not np.isfinite(ax_max) or ax_min >= ax_max:
-                ax_min = min(xedges.min(), yedges.min())
-                ax_max = max(xedges.max(), yedges.max())
-
-            if np.isfinite(ax_min) and np.isfinite(ax_max) and ax_min < ax_max:
-                axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange')
-                axs[i].set_xlim(ax_min, ax_max)
-                axs[i].set_ylim(ax_min, ax_max)
+        ax_min = min(xedges.min(), yedges.min())
+        ax_max = max(xedges.max(), yedges.max())
+        if np.isfinite(ax_min) and np.isfinite(ax_max) and ax_min < ax_max:
+            axs[i].plot([ax_min, ax_max], [ax_min, ax_max], color='tab:orange', linestyle='--')
+            axs[i].set_xlim(ax_min, ax_max)
+            axs[i].set_ylim(ax_min, ax_max)
             
         axs[i].set_title(var_constraints[i])
-        if l_plot_log:
-            axs[i].set_xlabel('log10 target output')
-            axs[i].set_ylabel('log10 emulator output')
+        if title == 'Raw values' and l_plot_log:
+             axs[i].set_xlabel('log10 target')
+             axs[i].set_ylabel('log10 emulator')
         else:
-            axs[i].set_xlabel('target output')
-            axs[i].set_ylabel('emulator output')
+             suffix = " (normalized)" if title == "Normalized" else ""
+             axs[i].set_xlabel('target' + suffix)
+             axs[i].set_ylabel('emulator' + suffix)
     
     fig.suptitle(title)
     try:
@@ -610,20 +671,23 @@ def plot_2dhist(y_tgt, y_mdl, ppe_info, title, l_plot_log, savefig=False):
     except Exception as e:
         print(f"Warning: tight_layout failed for {title}: {e}")
     if savefig:
-        plt.savefig(f'plots/emulator_2dhist_{title.replace(" ", "_")}.pdf')
+        filename = f"{prefix}_" if prefix else ""
+        plt.savefig(f'plots/ppe/emulator_2dhist_{filename}{title.replace(" ", "_")}.pdf')
 
 
 
 def plot_emulator_results_gp(x_val, y_val, models, ppe_info, transform_methods, scalers, x_train, y_train_dict,
-                          l_plot_uncertainty=False, l_plot_log=True, l_plot_scatter=False, savefig=False):
+                          l_plot_uncertainty=False, l_plot_log=True, l_plot_scatter=False, savefig=False, prefix=""):
 
-    y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc = get_model_results_gp(models, x_val, y_val, ppe_info, transform_methods, scalers, x_train, y_train_dict)
+    y_mdl_inv, y_tgt_inv, y_mdl, y_tgt, y_mdl_unc, y_mdl_unc_inv = get_model_results_gp(models, x_val, y_val, ppe_info, transform_methods, scalers, x_train, y_train_dict)
 
     if l_plot_scatter:
-        plot_scatter(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log, savefig)
-        plot_scatter(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log, savefig)
+        plot_scatter(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log, savefig, prefix, y_mdl_unc=y_mdl_unc if l_plot_uncertainty else None)
+        plot_scatter(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log, savefig, prefix, y_mdl_unc=y_mdl_unc_inv if l_plot_uncertainty else None)
     else:
-        plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log, savefig)
-        plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log, savefig)
+        plot_2dhist(y_tgt, y_mdl, ppe_info, 'Normalized', l_plot_log, savefig, prefix)
+        plot_2dhist(y_tgt_inv, y_mdl_inv, ppe_info, 'Raw values', l_plot_log, savefig, prefix)
+        
     if l_plot_uncertainty:
-        plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, 'Normalized', ppe_info, savefig)
+        plot_2dhist_unc(y_tgt, y_mdl, y_mdl_unc, 'Normalized', ppe_info, savefig, prefix)
+        plot_2dhist_unc(y_tgt_inv, y_mdl_inv, y_mdl_unc_inv, 'Raw values', ppe_info, savefig, prefix)

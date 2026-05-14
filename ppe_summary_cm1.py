@@ -20,7 +20,7 @@ import netCDF4 as nc
 import dask
 from dask.distributed import Client, progress
 import joblib
-
+import argparse
 import sys
 from tqdm.auto import tqdm
 
@@ -33,33 +33,36 @@ tqdm_disable = not sys.stderr.isatty()
 # Perlmutter/Lustre fix: Disable HDF5 file locking
 os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 
-def main():
+# Stinginess levels: HI, MID, LOW 
+# HI: HI includes all samples (not throwing away any potentially useless samples, therefore stingy)
+# LOW: LOW includes only samples within the bound of the most recent PPE (last entry of the ppe_basename)
+# MID: MID is somewhere in between, including all samples with parameters within the range of the 
+# most recent PPE plus a buffer size.
+sting_lvl = 'MID'
+buffer_size = 2
+l_dry_run = False
+
+def main(camp='dycoms'):
     """Main function to process PPE data"""
     # Configuration
     l_parallel = True
     l_testing = False
-    n_workers = 8
+    n_workers = 32
     n_test = n_workers
     l_pert = True
 
-    dycoms_ppe_basename = 'fullmp_dycoms_pccs_smmtrans_select'
-    rico_ppe_basename = dycoms_ppe_basename.replace('dycoms','rico')
+    ppe_basename = ['fullmp_dycoms_test57_select',]
 
-    # list of directories
-
-    sim_configs = [
-        dycoms_ppe_basename,
-    ] # list of directories
-    target_sim_config = 'fullmp_dycoms_tgt_pert'
+    sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
+    target_sim_config = f'fullmp_{camp}_tgt_pert'
     steady_state_hrs = 2
 
-    # sim_configs = [
-    #     rico_ppe_basename,
-    # ] # list of directories
-    # target_sim_config = 'fullmp_rico_tgt_pert'
-    # steady_state_hrs = 5
+    if camp == 'rico':
+        steady_state_hrs = 5
+    elif camp == 'dycoms':
+        steady_state_hrs = 2
 
-    lwp_threshold = 0.05 # equiv to 50 g/m2
+    lwp_threshold = 0.02 # equiv to 50 g/m2
     print('lwp_threshold:', lwp_threshold)
     print('PPE directory:', sim_configs)
     print('target directory:', target_sim_config)
@@ -76,7 +79,7 @@ def main():
     # CSV listing parameters actually perturbed (first column = param names);
     # only used when sim_config_str ends with '_select'
     select_params_csv = os.path.join(os.path.dirname(__file__),
-                                     'perturbation_design/test21_perturbation_parameters.csv')
+                                     'perturbation_design/test37_perturbation_parameters.csv')
 
     # mconfigs = os.listdir(cl.output_dir + datedir) # this line seems unused and might fail if sim_configs is list, but it uses os.listdir(cl.output_dir + datedir) which is fine if datedir is empty string and output_dir is base. 
     # But wait, cl.output_dir + datedir is just the date dir. 
@@ -90,6 +93,8 @@ def main():
                      'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss', 
                      'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
                      'prate_dm_ss', 'prate_ds_ss', 'prate_90th_ss',
+                     'KY346_dm_ss', 'KY346_99th_ss',
+                     'KX_dm_ss', 'KX_99th_ss',
                     ] # domain-mean path
 
 #     var_interest += [
@@ -113,6 +118,18 @@ def main():
                     'date': datedir,
                     'mp_config': train_mp})
     ppe_idx = cl.get_pert_idx(file_info)
+
+    # Filter PPE members based on stinginess level
+    ppe_idx = cl.filter_ppe_by_stinginess(
+        ppe_idx, sim_configs, sting_lvl, buffer_size,
+        cl.output_dir, datedir, train_mp
+    )
+
+    print(f"Total PPE members to process: {len(ppe_idx)}")
+
+    if l_dry_run:
+        print("\n*** DRY RUN: exiting before loading data ***")
+        return
 
     if l_testing:
         ppe_idx = ppe_idx[:n_test]
@@ -151,7 +168,7 @@ def main():
         if os.path.exists(train_jl_path):
             print(f"Loading {sim_config} data from {train_jl_path}")
             nc_dict[sim_config] = joblib.load(train_jl_path)
-            
+
             # Load global attributes from the first valid member
             ppe_idx_sim = [ippe for ippe in ppe_idx if (isinstance(ippe, dict) and ippe['sim_config'] == sim_config) or (not isinstance(ippe, dict) and sim_config == sim_configs[0])]
             if ppe_idx_sim:
@@ -159,8 +176,42 @@ def main():
                 finfo_attr = file_info.copy()
                 finfo_attr['sim_config'] = sim_config
                 cl.load_cm1_attrs(finfo_attr, nc_dict=nc_dict, ipert=ppe_idx_sim[0], continuous_ic=True)
-            
-        else: 
+
+            # Check for missing variables in cached data and reload if needed
+            try:
+                first_item = ppe_idx_sim[0]
+                if isinstance(first_item, dict):
+                    gid = first_item['global_id']
+                else:
+                    gid = int(first_item) if str(first_item).isdigit() else 0
+                existing_vars = nc_dict[sim_config][train_mp]['cic'][gid].keys()
+                ppe_vars_to_load = [v for v in var_interest if v not in existing_vars]
+            except (KeyError, IndexError):
+                ppe_vars_to_load = var_interest
+
+            if ppe_vars_to_load:
+                print(f"Missing PPE variables in cache: {ppe_vars_to_load}. Reloading...")
+                if l_parallel:
+                    tasks = []
+                    for ippe in ppe_idx_sim:
+                        task = dask.delayed(cl.load_cm1)(
+                            file_info, ppe_vars_to_load, steady_state_hrs, nc_dict=None, continuous_ic=True,
+                            ipert=ippe, lwp_threshold=lwp_threshold
+                        )
+                        tasks.append(task)
+                    futures = client.compute(tasks)
+                    progress(futures)
+                    results = client.gather(futures)
+                    for r in tqdm(results, desc=f'merging missing PPE vars for {sim_config}'):
+                        cl.deep_merge(nc_dict, r)
+                else:
+                    pbar = tqdm(ppe_idx_sim, desc=f'loading missing PPE vars for {sim_config}')
+                    for ippe in pbar:
+                        cl.load_cm1(file_info, ppe_vars_to_load, steady_state_hrs, nc_dict=nc_dict, continuous_ic=True, ipert=ippe, lwp_threshold=lwp_threshold, pbar=pbar)
+                joblib.dump(nc_dict[sim_config], train_jl_path)
+                print(f"Updated cache saved to {train_jl_path}")
+
+        else:
             ppe_idx_sim = [ippe for ippe in ppe_idx if (isinstance(ippe, dict) and ippe['sim_config'] == sim_config) or (not isinstance(ippe, dict) and sim_config == sim_configs[0])]
             
             if l_parallel:
@@ -631,5 +682,9 @@ def write_netcdf(nc_file, ncvars, dims, global_attrs):
             except:
                 outnc_dict[var_name].units = ""
 
-if __name__ == "__main__":
-    main() 
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('camp', nargs='?', default='dycoms',
+                        help='Campaign name (e.g., dycoms, rico). Default: dycoms')
+    args = parser.parse_args()
+    main(camp=args.camp)

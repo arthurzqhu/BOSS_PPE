@@ -10,6 +10,7 @@ from tqdm import tqdm
 import sys
 import warnings
 from scipy.fft import fft2, ifft2, fftshift
+import pandas as pd
 
 M3toQ = np.pi/6*1e3
 QtoM3 = 1/M3toQ
@@ -135,6 +136,18 @@ output_var_set = {
                   'prate_ds_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS DS Rain Rate'},
                   'M6_99th_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'SS M6 99th percentile', 'lwc_threshold': 1e-5},
                   'M6_ds_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'SS M6 Standard Deviation', 'lwc_threshold': 1e-5},
+                  # Numerical broadening diagnostics: KY(036) = M0*M6/M3^2 (dimensionless, >=1 by Cauchy-Schwarz)
+                  # Broadening widens the DSD (reduces shape param nu), increasing KY toward ~20 (exponential limit)
+                  'KY036_dm_ss':   {'var_source': ['qc0', 'qc3', 'qc6'], 'var_unit': '-', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud mean KY(036)'},
+                  'KY036_99th_ss': {'var_source': ['qc0', 'qc3', 'qc6'], 'var_unit': '-', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud 99th pct KY(036)'},
+                  # Numerical broadening diagnostics: KY(346) = M3^(4/3) * M6^(2/3) / M4^2 (dimensionless, >=1 by Cauchy-Schwarz)
+                  # Matches Fortran get_k(mom_set, 3, 4, 6) in module_mp_p3_slc.F
+                  'KY346_dm_ss':   {'var_source': ['qc3', 'qc4', 'qc6'], 'var_unit': '-', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud mean KY(346)'},
+                  'KY346_99th_ss': {'var_source': ['qc3', 'qc4', 'qc6'], 'var_unit': '-', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud 99th pct KY(346)'},
+                  # Numerical broadening diagnostics: KX = M0^0.5 * M4^1.5 / M3^2 (dimensionless, >=1 by Cauchy-Schwarz)
+                  # Uses qc0 (M0), qc3 (M3), qc4 (M4 in (100um)^4/m^3 units); M4_phys = qc4 * 1e-16
+                  'KX_dm_ss':   {'var_source': ['qc0', 'qc3', 'qc4'], 'var_unit': '-', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud mean KX'},
+                  'KX_99th_ss': {'var_source': ['qc0', 'qc3', 'qc4'], 'var_unit': '-', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud 99th pct KX'},
                   'prate_10th_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS 10th percentile Rain Rate'},
                   'prate_90th_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS 90th percentile Rain Rate'},
                   'sedflux_m0': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Sedflux M0'},
@@ -309,6 +322,108 @@ def deep_merge(dict1, dict2):
         else:
             dict1[key] = value
     return dict1
+
+def filter_ppe_by_stinginess(ppe_idx, sim_configs, sting_lvl, buffer_size,
+                              base_dir, datedir, train_mp):
+    """
+    Filter PPE members based on stinginess level.
+
+    HI:  Keep all samples (no filtering).
+    LOW: Keep only samples within the parameter bounds of the most recent
+         (last) ensemble.
+    MID: Keep samples within the bounds of the most recent ensemble plus
+         a buffer (buffer_size * range) on each side.
+
+    Members of the reference (last) ensemble are always kept.
+    Only checks parameters that vary (range > 0) in the reference ensemble.
+
+    Returns filtered ppe_idx (preserving original order).
+    """
+    ref_config = sim_configs[-1]
+    earlier_configs = sim_configs[:-1]
+
+    print(f"\n{'='*60}")
+    print(f"Stinginess level  : {sting_lvl}")
+    print(f"Reference ensemble: {ref_config}")
+    if sting_lvl == 'MID': 
+        print(f"Buffer size       : {buffer_size}")
+    print(f"Total PPE before filtering: {len(ppe_idx)}")
+
+    if sting_lvl == 'HI':
+        print(f"sting_lvl='HI': keeping all {len(ppe_idx)} members")
+        print(f"{'='*60}\n")
+        return ppe_idx
+
+    if sting_lvl not in ('MID', 'LOW'):
+        raise ValueError(f"Invalid sting_lvl: {sting_lvl}. Must be 'HI', 'MID', or 'LOW'.")
+
+    # --- Read params from reference ensemble to get bounds ---
+    ref_members = [p for p in ppe_idx if p['sim_config'] == ref_config]
+    ref_params_list = []
+    for m in ref_members:
+        path = f"{base_dir}{datedir}/{m['sim_config']}/{train_mp}/{m['member']}/params.csv"
+        df = pd.read_csv(path)
+        ref_params_list.append(df.set_index('param_name')['pvalue_mean'])
+
+    ref_df = pd.DataFrame(ref_params_list)
+
+    # Identify varying parameters (range > 0)
+    param_min = ref_df.min()
+    param_max = ref_df.max()
+    param_range = param_max - param_min
+    varying_params = param_range[param_range > 0].index.tolist()
+
+    print(f"Varying parameters ({len(varying_params)}):")
+
+    # Compute bounds
+    bounds_lo = param_min[varying_params].copy()
+    bounds_hi = param_max[varying_params].copy()
+
+    if sting_lvl == 'MID':
+        buf = param_range[varying_params] * buffer_size
+        bounds_lo -= buf
+        bounds_hi += buf
+        print(f"  (bounds extended by {buffer_size*100:.0f}% of range on each side)")
+
+    for p in varying_params:
+        print(f"  {p:20s}: [{bounds_lo[p]:12.6f}, {bounds_hi[p]:12.6f}]")
+
+    # --- Filter: keep all reference members, filter earlier ensembles ---
+    filtered_ppe_idx = []
+    n_kept = {cfg: 0 for cfg in earlier_configs}
+    n_total = {cfg: 0 for cfg in earlier_configs}
+
+    for p in ppe_idx:
+        if p['sim_config'] == ref_config:
+            filtered_ppe_idx.append(p)
+            continue
+
+        cfg = p['sim_config']
+        n_total[cfg] += 1
+
+        path = f"{base_dir}{datedir}/{cfg}/{train_mp}/{p['member']}/params.csv"
+        df = pd.read_csv(path)
+        params = df.set_index('param_name')['pvalue_mean']
+
+        in_bounds = all(
+            bounds_lo[vp] <= params[vp] <= bounds_hi[vp]
+            for vp in varying_params
+        )
+
+        if in_bounds:
+            filtered_ppe_idx.append(p)
+            n_kept[cfg] += 1
+
+    # --- Summary ---
+    print(f"\nFiltering summary:")
+    for cfg in earlier_configs:
+        print(f"  {cfg}: kept {n_kept[cfg]}/{n_total[cfg]} members")
+    print(f"  {ref_config}: kept {len(ref_members)}/{len(ref_members)} members (reference, all kept)")
+    print(f"Total after filtering: {len(filtered_ppe_idx)}")
+    print(f"{'='*60}\n")
+
+    return filtered_ppe_idx
+
 def load_cm1_attrs(file_info, nc_dict, ipert=0, continuous_ic=True):
     """
     Lightweight function to load only global attributes and coordinate info 
@@ -373,7 +488,7 @@ def load_cm1_attrs(file_info, nc_dict, ipert=0, continuous_ic=True):
     
     return nc_dict
 
-def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, ipert=0, lwp_threshold=0.05, pbar=None):
+def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, ipert=0, lwp_threshold=0.02, pbar=None):
     if nc_dict is None:
         nc_dict = {}
         
@@ -498,7 +613,7 @@ def parse_var_meta(var_name):
     is_ds   = bool(re.search(r'_ds', var_name))
 
     # is SS (temporal mean of the last x hr)
-    is_ss   = bool(re.search(r'ss', var_name))
+    is_ss   = bool(re.search(r'_ss', var_name))
 
     return {'is_prc': is_prc, 'nth_prctl': nth_prctl, 'is_dm': is_dm, 'is_ds': is_ds, 'is_ss': is_ss}
 
@@ -534,7 +649,7 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
         warnings.simplefilter("ignore")
         # Reduction
         if 'prof' in var_name:
-            res = np.nanmean(data, axis=(0, 2, 3)) * scale
+            res = data * scale
         elif 'path' in var_name:
             dz_b = dz[None, :, None, None]
             path = np.nansum(data * dz_b * rho, axis=1) # (time, y, x)
@@ -595,6 +710,48 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
                 res = lags[idx]
         elif 'precip_frac' in var_name:
             res = np.mean(raw_data * scale > 1e-4) # mm/hr
+        elif 'KY036' in var_name:
+            m0, m3, m6_raw = data  # (ntime, nz, ny, nx) each; masked to NaN outside cloud
+            m3_safe = np.where(m3 > 0, m3, np.nan)
+            # KY = M0 * M6 / M3^2; M6_phys = m6_raw * (1e-4)^6 = m6_raw * 1e-24
+            ky = m0 * m6_raw * 1e-24 / m3_safe**2
+            # Use .filled(np.nan) to convert MaskedArray fill values to NaN before isfinite check;
+            # boolean indexing on a MaskedArray uses fill_value=True for masked positions,
+            # which would include all non-cloud fill values in the valid array.
+            ky_plain = np.array(ky.filled(np.nan) if hasattr(ky, 'filled') else ky, dtype=np.float64)
+            valid = ky_plain[np.isfinite(ky_plain)]
+            if valid.size == 0:
+                res = np.nan
+            else:
+                res = np.mean(valid)
+        elif 'KY346' in var_name:
+            m3, m4_raw, m6_raw = data  # (ntime, nz, ny, nx) each; masked to NaN outside cloud
+            m3_safe = np.where(m3 > 0, m3, np.nan)
+            # KY(346) = M3^(4/3) * M6^(2/3) / M4^2; M4_phys = m4_raw * 1e-16, M6_phys = m6_raw * 1e-24
+            m4_phys = np.where(m4_raw > 0, m4_raw, np.nan) * 1e-16
+            m6_phys = m6_raw * 1e-24
+            ky = (m3_safe**(4.0/3.0)) * (m6_phys**(2.0/3.0)) / m4_phys**2
+            # Use .filled(np.nan) to avoid MaskedArray fill_value contamination (see KY036 comment)
+            ky_plain = np.array(ky.filled(np.nan) if hasattr(ky, 'filled') else ky, dtype=np.float64)
+            valid = ky_plain[np.isfinite(ky_plain)]
+            if valid.size == 0:
+                res = np.nan
+            else:
+                res = np.mean(valid)
+        elif 'KX_' in var_name:
+            m0, m3, m4_raw = data  # (ntime, nz, ny, nx) each; masked to NaN outside cloud
+            m3_safe = np.where(m3 > 0, m3, np.nan)
+            # KX = M0^0.5 * M4^1.5 / M3^2; M4_phys = m4_raw * (1e-4)^4 = m4_raw * 1e-16
+            kx = (m0**0.5) * ((m4_raw * 1e-16)**1.5) / m3_safe**2
+            # Use .filled(np.nan) to avoid MaskedArray fill_value contamination (see KY036 comment)
+            kx_plain = np.array(kx.filled(np.nan) if hasattr(kx, 'filled') else kx, dtype=np.float64)
+            valid = kx_plain[np.isfinite(kx_plain)]
+            if valid.size == 0:
+                res = np.nan
+            else:
+                res = np.mean(valid)
+        elif 'pressure' in var_name:
+            res = raw_data
         else:
             res = raw_data.squeeze() * scale
 
@@ -661,16 +818,20 @@ def aggregate_timeseries(var_name, ts, meta):
             res = (num / den)**(1/3) * 1e6 if den > 0 else np.nan
             return res
 
+        if 'KY036' in var_name or 'KY346' in var_name or 'KX_' in var_name:
+            # Each timestep already returned a scalar (mean or 99th pct); just average over ss timesteps
+            return np.nanmean(ts)
+
         arr = np.squeeze(np.stack(ts))
 
 
         if meta['is_ds']:
-            # is domain std
-            arr = np.nanstd(arr, axis=(1, 2))
-        
+            # is domain std — mean over last two spatial dims (y, x)
+            arr = np.nanstd(arr, axis=(-2, -1))
+
         if meta['is_dm']:
-            # is domain mean
-            arr = np.nanmean(arr, axis=(1,2))
+            # is domain mean — mean over last two spatial dims (y, x)
+            arr = np.nanmean(arr, axis=(-2, -1))
 
         # Temporal average
         if meta['is_ss']:
