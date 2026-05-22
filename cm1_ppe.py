@@ -30,10 +30,9 @@ from dask.distributed import Client, progress
 def main(camp='dycoms'):
     nikki = 'ppe'
     target_nikki = 'target'
-    l_pert = True
     lwp_threshold = 0.02
 
-    ppe_basename = ['fullmp_dycoms_test58_arviz',
+    ppe_basename = ['NCE_dycoms_4param_advmom_arviz',
                     # 'fullmp_dycoms_test54_no_snapping_advect_state_finer_arviz',
                     ]
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
@@ -41,9 +40,12 @@ def main(camp='dycoms'):
     # (mirrors ppe_summary_cm1.py line 142: sim_configs[-1])
     sim_config_str = sim_configs[-1]
 
-    # target_sim_config = f'NCE_{camp}_tgt'
-    # target_sim_config = f'fullmp_{camp}_instrate'
-    target_sim_config = f'fullmp_{camp}_tgt_pert'
+    if 'NCE' in ppe_basename[0]:
+        target_sim_config = f'NCE_{camp}_tgt'
+        l_pert = False
+    else:
+        target_sim_config = f'fullmp_{camp}_tgt_pert'
+        l_pert = True
 
     if camp == 'rico':
         steady_state_hrs = 5
@@ -64,17 +66,21 @@ def main(camp='dycoms'):
     var_interest += [
                      'M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss',
                      'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss',
-                     'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
-                     'prate_dm_ss', 'prate_ds_ss', 'KX_dm_ss', 'KY346_dm_ss',
-                     'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
-                     'sfM0_dm_100m_ss', 'sfM3_dm_100m_ss', 'sfM4_dm_100m_ss', 'sfM6_dm_100m_ss',
-                     'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
-                     'sfM0_dm_500m_ss', 'sfM3_dm_500m_ss', 'sfM4_dm_500m_ss', 'sfM6_dm_500m_ss',
-                     'M0_dm_10m_ss', 'M3_dm_10m_ss', 'M4_dm_10m_ss', 'M6_dm_10m_ss',
-                     'M0_dm_100m_ss', 'M3_dm_100m_ss', 'M4_dm_100m_ss', 'M6_dm_100m_ss',
-                     'M0_dm_250m_ss', 'M3_dm_250m_ss', 'M4_dm_250m_ss', 'M6_dm_250m_ss',
-                     'M0_dm_500m_ss', 'M3_dm_500m_ss', 'M4_dm_500m_ss', 'M6_dm_500m_ss',
     ]
+
+    if 'fullmp' in ppe_basename[0]:
+        var_interest += [
+                         'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
+                         'prate_dm_ss', 'prate_ds_ss', 'KX_dm_ss', 'KY346_dm_ss',
+                         'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
+                         'sfM0_dm_100m_ss', 'sfM3_dm_100m_ss', 'sfM4_dm_100m_ss', 'sfM6_dm_100m_ss',
+                         'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
+                         'sfM0_dm_500m_ss', 'sfM3_dm_500m_ss', 'sfM4_dm_500m_ss', 'sfM6_dm_500m_ss',
+                         'M0_dm_10m_ss', 'M3_dm_10m_ss', 'M4_dm_10m_ss', 'M6_dm_10m_ss',
+                         'M0_dm_100m_ss', 'M3_dm_100m_ss', 'M4_dm_100m_ss', 'M6_dm_100m_ss',
+                         'M0_dm_250m_ss', 'M3_dm_250m_ss', 'M4_dm_250m_ss', 'M6_dm_250m_ss',
+                         'M0_dm_500m_ss', 'M3_dm_500m_ss', 'M4_dm_500m_ss', 'M6_dm_500m_ss',
+                ]
 
     train_file_info = {'dir': cl.output_dir,
                        'date': nikki,

@@ -16,3 +16,11 @@ Session.vim
 BOSS_PPE.code-workspace
 summary_ncs
 *.pdf
+.claude
+claude_scripts
+CLAUDE.md
+claude_plots
+deprecated_code
+perturbation_design
+sensitivity_results
+~/tmp/dask-scratch-space
