@@ -662,9 +662,18 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
         if continuous_ic or l_pert:
             nc_dict[fsim_config][mp][ic_str].setdefault(global_id, {})
 
-        # time vector initialization (only the SS window)
+        # Full-simulation time vector (length = len(file_paths)) derived
+        # arithmetically from dt and the last file's time, so we don't have
+        # to open early (often-corrupt) files. cm1_viz expects this shape.
         if 'time' not in nc_dict[fsim_config]:
-            nc_dict[fsim_config]['time'] = np.empty(len(files_to_use), dtype=float)
+            n_total = len(file_paths)
+            t_last_s = float(np.asarray(ds0.variables['time'][:]).item())
+            if np.isfinite(dt) and dt > 0:
+                nc_dict[fsim_config]['time'] = (
+                    t_last_s - (n_total - 1 - np.arange(n_total)) * dt
+                )
+            else:
+                nc_dict[fsim_config]['time'] = np.full(n_total, np.nan)
 
         # var-specific ic values
         for vn in vars_vn:
@@ -682,13 +691,11 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     raw_collector = {vn: [] for vn in var_interest}
     lwp_pcts = np.zeros(len(files_to_use))
 
-    # Main single-pass loop over the SS window only
+    # Main single-pass loop over the SS window only.
+    # The full-sim `time` vector is computed arithmetically above, so we no
+    # longer need to read time from each file here.
     for ifp, fp in enumerate(files_to_use):
         with nc.Dataset(fp, 'r') as ds:
-            # Time tracking
-            t_val = np.asarray(ds.variables['time'][:]).item()
-            nc_dict[fsim_config]['time'][ifp] = t_val
-
             # Physics helpers
             rho = calc_rho(ds)
             lwp = calc_lwp(ds, dz, rho=rho)
@@ -707,6 +714,12 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
         mean_pct = np.mean(lwp_pcts)
         pbar.set_postfix(lwp_pct=f"{mean_pct:.2f}%")
 
+    # Number of files skipped at the start (outside the SS window).
+    # Per-time arrays from raw_collector cover only files_to_use; pad with
+    # leading NaN so their leading axis matches len(file_paths) — the same
+    # length as nc_dict[fsim_config]['time'] — which is what cm1_viz expects.
+    n_skip = len(file_paths) - len(files_to_use)
+
     # Final aggregation and assignment
     for vn in var_interest:
         dst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
@@ -718,7 +731,15 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
             # 1/t in hr^-1; never-rains → 0.0 (slowest possible signal for NN/GP)
             dst[vn]['value'] = (1.0 / t_onset_hr) if (np.isfinite(t_onset_hr) and t_onset_hr > 0) else 0.0
         else:
-            dst[vn]['value'] = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
+            val = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
+            # Pad time-axis-leading arrays so they align with full-sim `time`
+            if (n_skip > 0
+                    and isinstance(val, np.ndarray)
+                    and val.ndim >= 1
+                    and val.shape[0] == len(files_to_use)):
+                pad_shape = (n_skip,) + val.shape[1:]
+                val = np.concatenate([np.full(pad_shape, np.nan), val], axis=0)
+            dst[vn]['value'] = val
         dst[vn]['units'] = output_var_set[vn]['var_unit']
 
     return nc_dict
