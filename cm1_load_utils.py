@@ -2,6 +2,71 @@ import os
 import re
 import numpy as np
 import netCDF4 as nc
+
+def _open_nc(path, mode='r'):
+    try:
+        return nc.Dataset(path, mode)
+    except OSError as e:
+        raise OSError(f"Failed to open NetCDF file: {path} ({e})") from e
+
+def _open_last_valid(file_paths, mode='r'):
+    """Try files from the end backward and return the first one that opens.
+    Returns (path, Dataset) or (None, None) if every file is corrupt."""
+    for path in reversed(file_paths):
+        try:
+            ds = nc.Dataset(path, mode)
+            return path, ds
+        except OSError:
+            print(f"[_open_last_valid] skipping corrupt file: {path}")
+            continue
+    return None, None
+
+# Vars whose computation method has changed; force a reload by stripping any
+# stale cached values so the missing-var check in callers picks them up.
+# Repopulate this tuple temporarily after changing how a cached var is computed
+# (e.g. ('v_precip_onset',)) so a single run sweeps the live caches, then clear.
+INVALIDATE_VARS = ()
+
+def invalidate_stale_vars(payload, vars_to_drop=INVALIDATE_VARS):
+    """Recursively walk a cache dict and pop entries named in vars_to_drop
+    whose value looks like {'value': ..., 'units': ...}. Layout-agnostic:
+    works for continuous_ic, per-pert target, and multi-sim_config caches."""
+    if not isinstance(payload, dict) or not vars_to_drop:
+        return payload
+    for k in list(payload.keys()):
+        v = payload[k]
+        if k in vars_to_drop and isinstance(v, dict) and 'value' in v:
+            payload.pop(k)
+        elif isinstance(v, dict):
+            invalidate_stale_vars(v, vars_to_drop)
+    return payload
+
+def _diagnose_precip_onset(file_paths, dt, skip_hrs, threshold_mmhr=1e-4):
+    """Walk files in order starting after skip_hrs; return the first time
+    (in hours) at which the raw domain-mean surface prate exceeds the
+    threshold (mm/hr). Returns np.nan if onset is never detected.
+
+    Early files outside the steady-state window are sometimes corrupt;
+    those are skipped with a print, matching _open_last_valid's pattern.
+    """
+    if not np.isfinite(dt) or dt <= 0 or not file_paths:
+        return np.nan
+    # Index of the earliest file we should consider (1-based cm1out_000001 ↔ t≈dt).
+    start_idx = max(0, int(np.floor(skip_hrs * 3600.0 / dt)) - 1)
+    for fp in file_paths[start_idx:]:
+        try:
+            with nc.Dataset(fp, 'r') as ds:
+                t_s = float(np.asarray(ds.variables['time'][:]).item())
+                if t_s / 3600.0 < skip_hrs:
+                    continue
+                prate = np.asarray(ds.variables['prate'][...]) * 3600.0  # mm/hr
+                if np.nanmean(prate) > threshold_mmhr:
+                    return t_s / 3600.0
+        except OSError:
+            print(f"[_diagnose_precip_onset] skipping corrupt file: {fp}")
+            continue
+    return np.nan
+
 from glob import glob
 import platform
 import socket
@@ -460,7 +525,16 @@ def load_cm1_attrs(file_info, nc_dict, ipert=0, continuous_ic=True):
     if not file_paths:
         raise FileNotFoundError(f"No files match: {file_pattern}")
 
-    with nc.Dataset(file_paths[0], 'r') as ds0:
+    # Walk from the end backward; tolerate corrupt files. If every file is bad,
+    # skip the attr/coord population entirely (caller will fill NaN downstream).
+    _used_path, _ds0 = _open_last_valid(file_paths)
+    if _ds0 is None:
+        print(f"[load_cm1_attrs] no readable files for {fsim_config}/{member}; skipping attr load.")
+        nc_dict.setdefault(fsim_config, {})
+        nc_dict[fsim_config].setdefault(mp, {})
+        nc_dict['init_var'] = vars_vn
+        return nc_dict
+    with _ds0 as ds0:
         nc_dict.setdefault(fsim_config, {})
         nc_dict[fsim_config].setdefault(mp, {})
         nc_dict['init_var'] = vars_vn
@@ -528,65 +602,106 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     if not file_paths:
         raise FileNotFoundError(f"No files match: {file_pattern}")
 
-    # Get dt for n_needed
+    # Handle early-error runs (crashed CM1): fewer than min_files cm1out files.
+    # Fill ic attrs, then set all summary variables to NaN and return.
+    min_files = file_info.get('min_files', None)
+    if (min_files is not None) and (len(file_paths) < min_files):
+        load_cm1_attrs(file_info, nc_dict, ipert=ipert, continuous_ic=continuous_ic)
+        nc_dict[fsim_config][mp].setdefault(ic_str, {})
+        if continuous_ic or l_pert:
+            nc_dict[fsim_config][mp][ic_str].setdefault(global_id, {})
+        _used_path, _ds0 = _open_last_valid(file_paths)
+        if _ds0 is not None:
+            with _ds0 as ds0:
+                for vn in vars_vn:
+                    keydst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
+                    keydst[vn] = ds0.getncattr(vn)
+        else:
+            for vn in vars_vn:
+                keydst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
+                keydst[vn] = np.nan
+        for vn in var_interest:
+            dst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
+            dst.setdefault(vn, {})
+            dst[vn]['value'] = np.nan
+            dst[vn]['units'] = output_var_set[vn]['var_unit']
+        print(f"[load_cm1] {fsim_config}/{member}: only {len(file_paths)} files (<{min_files}); filling NaN.")
+        return nc_dict
+
+    # Get dt from the LAST two files (always within the SS window).
+    # Early files may be corrupted; we never want to open them.
     if len(file_paths) >= 2:
-        with nc.Dataset(file_paths[0], 'r') as ds_a, nc.Dataset(file_paths[1], 'r') as ds_b:
+        with _open_nc(file_paths[-2]) as ds_a, _open_nc(file_paths[-1]) as ds_b:
             t0 = ds_a.variables['time'][0]
             t1 = ds_b.variables['time'][0]
             dt = float(t1 - t0)
     else:
         dt = np.nan
 
-    # Extract attributes and coordinates
+    n_needed = int(np.ceil((ss_hrs * 3600) / dt) + 1) if np.isfinite(dt) and dt > 0 else 1
+    # Cap to available files and restrict to last n_needed — anything earlier is
+    # outside the steady-state window and not opened.
+    n_needed = min(n_needed, len(file_paths))
+    files_to_use = file_paths[-n_needed:]
+
+    # Diagnose rain onset by scanning files from `onset_skip_hrs` onward
+    # (early window discarded to avoid spin-up rebalancing rain).
+    needs_onset = any(v in var_interest for v in ('v_precip_onset', 't_precip_onset'))
+    if needs_onset:
+        t_onset_hr = _diagnose_precip_onset(
+            file_paths, dt, file_info.get('onset_skip_hrs', 0.0)
+        )
+    else:
+        t_onset_hr = np.nan
+
+    # Extract attributes and coordinates (uses last file)
     load_cm1_attrs(file_info, nc_dict, ipert=ipert, continuous_ic=continuous_ic)
-    
-    with nc.Dataset(file_paths[0], 'r') as ds0:
+
+    with _open_nc(files_to_use[-1]) as ds0:
         nc_dict[fsim_config][mp].setdefault(ic_str, {})
         if continuous_ic or l_pert:
             nc_dict[fsim_config][mp][ic_str].setdefault(global_id, {})
 
-        # time vector initialization
+        # time vector initialization (only the SS window)
         if 'time' not in nc_dict[fsim_config]:
-            nc_dict[fsim_config]['time'] = np.empty(len(file_paths), dtype=float)
+            nc_dict[fsim_config]['time'] = np.empty(len(files_to_use), dtype=float)
 
         # var-specific ic values
         for vn in vars_vn:
             keydst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
             keydst[vn] = ds0.getncattr(vn)
-        
+
         zf = np.asarray(ds0['zf'][:]).copy() * 1e3
 
     dz = zf[1:] - zf[:-1]
     z = (zf[1:] + zf[:-1])/2
     dx = nc_dict[fsim_config]['x'][1] - nc_dict[fsim_config]['x'][0]
 
-    n_needed = int(np.ceil((ss_hrs * 3600) / dt) + 1) if np.isfinite(dt) and dt > 0 else 1
-
     # Pre-parse meta and setup collectors
     var_meta = {vn: parse_var_meta(vn) for vn in var_interest}
     raw_collector = {vn: [] for vn in var_interest}
-    lwp_pcts = np.zeros(len(file_paths))
-    
-    # Main single-pass loop
-    for ifp, fp in enumerate(file_paths):
+    lwp_pcts = np.zeros(len(files_to_use))
+
+    # Main single-pass loop over the SS window only
+    for ifp, fp in enumerate(files_to_use):
         with nc.Dataset(fp, 'r') as ds:
             # Time tracking
             t_val = np.asarray(ds.variables['time'][:]).item()
             nc_dict[fsim_config]['time'][ifp] = t_val
-            
+
             # Physics helpers
             rho = calc_rho(ds)
             lwp = calc_lwp(ds, dz, rho=rho)
             lwp_pcts[ifp] = np.mean(lwp > lwp_threshold) * 100
 
             for vn in var_interest:
-                meta = var_meta[vn]
-                
-                # Normal variable extraction
-                is_ss_file = (ifp >= len(file_paths) - n_needed)
-                if not meta['is_ss'] or is_ss_file:
-                    val = extract_and_reduce(vn, ds, rho, lwp, dz, z, dx, lwp_threshold)
-                    raw_collector[vn].append(val)
+                # Onset vars are diagnosed via a separate scan above.
+                if vn in ('v_precip_onset', 't_precip_onset'):
+                    continue
+                # Every file in files_to_use is within the SS window,
+                # so unconditionally extract.
+                val = extract_and_reduce(vn, ds, rho, lwp, dz, z, dx, lwp_threshold)
+                raw_collector[vn].append(val)
 
     if pbar is not None:
         mean_pct = np.mean(lwp_pcts)
@@ -596,8 +711,14 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     for vn in var_interest:
         dst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
         dst.setdefault(vn, {})
-        
-        dst[vn]['value'] = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
+
+        if vn == 't_precip_onset':
+            dst[vn]['value'] = t_onset_hr if np.isfinite(t_onset_hr) else np.nan
+        elif vn == 'v_precip_onset':
+            # 1/t in hr^-1; never-rains → 0.0 (slowest possible signal for NN/GP)
+            dst[vn]['value'] = (1.0 / t_onset_hr) if (np.isfinite(t_onset_hr) and t_onset_hr > 0) else 0.0
+        else:
+            dst[vn]['value'] = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
         dst[vn]['units'] = output_var_set[vn]['var_unit']
 
     return nc_dict
@@ -695,10 +816,6 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
             vap_prs = (qv * press) / (eps + qv * (1 - eps))
             vap_prs_sat = saturation_vapor_pressure_liquid(tempK)
             res = vap_prs / vap_prs_sat * 100
-        elif 'v_precip_onset' in var_name:
-            res = 3600./data
-        elif 't_precip_onset' in var_name:
-            res = data/3600.
         elif 'decorr_length' in var_name:
             lags, radial_R = get_spatial_autocorrelation(lwp, dx)
             threshold = np.exp(-1)
@@ -822,7 +939,9 @@ def aggregate_timeseries(var_name, ts, meta):
             # Each timestep already returned a scalar (mean or 99th pct); just average over ss timesteps
             return np.nanmean(ts)
 
-        arr = np.squeeze(np.stack(ts))
+        # Force a writeable float64 copy: netCDF/masked-array views can be read-only,
+        # which breaks numpy 2.x's in-place nanmean/_divide_by_count.
+        arr = np.array(np.squeeze(np.stack(ts)), dtype=np.float64)
 
 
         if meta['is_ds']:
@@ -846,11 +965,6 @@ def aggregate_timeseries(var_name, ts, meta):
                 arr = np.percentile(valid, meta['nth_prctl'])
 
         # handle special cases
-        if 'v_precip_onset' in var_name:
-            return arr.max()
-        if 't_precip_onset' in var_name:
-            return arr.min()
-
         if 'precip_max_dm' in var_name:
             return np.nanmax(arr)
 

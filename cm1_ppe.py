@@ -22,35 +22,45 @@ import pandas as pd
 import joblib
 import dask
 from dask.distributed import Client, progress
+import socket
+import platform
 
-
-# In[15]:
-
+hostname = socket.gethostname()
+if hostname == "simurgh":
+    n_workers = 32
+else:
+    n_workers = 8
 
 def main(camp='dycoms'):
     nikki = 'ppe'
     target_nikki = 'target'
     lwp_threshold = 0.02
 
-    ppe_basename = ['NCE_dycoms_4param_advmom_arviz',
-                    # 'fullmp_dycoms_test54_no_snapping_advect_state_finer_arviz',
+    ppe_basename = [
+                    'fullmp_dycoms_offpolicy_r2_clip_freeparam_lhs',
                     ]
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
     # sim_config_str is used for joblib paths, plot dirs, and saved-file names
-    # (mirrors ppe_summary_cm1.py line 142: sim_configs[-1])
     sim_config_str = sim_configs[-1]
 
     if 'NCE' in ppe_basename[0]:
         target_sim_config = f'NCE_{camp}_tgt'
         l_pert = False
     else:
-        target_sim_config = f'fullmp_{camp}_tgt_pert'
+        target_sim_config = f'fullmp_{camp}_tgt_pert_oldcoalkernel'
         l_pert = True
 
     if camp == 'rico':
         steady_state_hrs = 5
+        min_files = 33
+        onset_skip_hrs = 1.5
     elif camp == 'dycoms':
         steady_state_hrs = 2
+        min_files = 25
+        onset_skip_hrs = 0.5
+    else:
+        min_files = None
+        onset_skip_hrs = 0.0
 
     plot_dir = f"plots/{nikki}/{sim_config_str}_lwpthres{round(lwp_threshold*1e3)}/"
     if not os.path.exists(plot_dir):
@@ -72,14 +82,14 @@ def main(camp='dycoms'):
         var_interest += [
                          'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
                          'prate_dm_ss', 'prate_ds_ss', 'KX_dm_ss', 'KY346_dm_ss',
-                         'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
-                         'sfM0_dm_100m_ss', 'sfM3_dm_100m_ss', 'sfM4_dm_100m_ss', 'sfM6_dm_100m_ss',
-                         'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
-                         'sfM0_dm_500m_ss', 'sfM3_dm_500m_ss', 'sfM4_dm_500m_ss', 'sfM6_dm_500m_ss',
-                         'M0_dm_10m_ss', 'M3_dm_10m_ss', 'M4_dm_10m_ss', 'M6_dm_10m_ss',
-                         'M0_dm_100m_ss', 'M3_dm_100m_ss', 'M4_dm_100m_ss', 'M6_dm_100m_ss',
-                         'M0_dm_250m_ss', 'M3_dm_250m_ss', 'M4_dm_250m_ss', 'M6_dm_250m_ss',
-                         'M0_dm_500m_ss', 'M3_dm_500m_ss', 'M4_dm_500m_ss', 'M6_dm_500m_ss',
+                         # 'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
+                         # 'sfM0_dm_100m_ss', 'sfM3_dm_100m_ss', 'sfM4_dm_100m_ss', 'sfM6_dm_100m_ss',
+                         # 'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
+                         # 'sfM0_dm_500m_ss', 'sfM3_dm_500m_ss', 'sfM4_dm_500m_ss', 'sfM6_dm_500m_ss',
+                         # 'M0_dm_10m_ss', 'M3_dm_10m_ss', 'M4_dm_10m_ss', 'M6_dm_10m_ss',
+                         # 'M0_dm_100m_ss', 'M3_dm_100m_ss', 'M4_dm_100m_ss', 'M6_dm_100m_ss',
+                         # 'M0_dm_250m_ss', 'M3_dm_250m_ss', 'M4_dm_250m_ss', 'M6_dm_250m_ss',
+                         # 'M0_dm_500m_ss', 'M3_dm_500m_ss', 'M4_dm_500m_ss', 'M6_dm_500m_ss',
                 ]
 
     train_file_info = {'dir': cl.output_dir,
@@ -88,6 +98,8 @@ def main(camp='dycoms'):
                        'l_pert': False,
                        'sim_config': sim_configs,  # list — get_pert_idx handles multi-config
                        'mp_config': train_mp,
+                       'min_files': min_files,
+                       'onset_skip_hrs': onset_skip_hrs,
                       }
 
     tgt_file_info = {'dir': cl.output_dir,
@@ -96,6 +108,7 @@ def main(camp='dycoms'):
                      'l_pert': l_pert,
                      'sim_config': target_sim_config,
                      'mp_config': target_mp,
+                     'onset_skip_hrs': onset_skip_hrs,
                     }
 
     nc_dict = {}
@@ -116,7 +129,7 @@ def main(camp='dycoms'):
     if os.path.exists(train_jl_path):
         print(f"Loading train data from {train_jl_path}")
         # Joblib stores {sc: nc_dict[sc]} for all configs; merge back into nc_dict
-        saved = joblib.load(train_jl_path)
+        saved = cl.invalidate_stale_vars(joblib.load(train_jl_path))
         if isinstance(saved, dict) and any(k in sim_configs for k in saved):
             # new multi-config format: {sc: {...}, ...}
             cl.deep_merge(nc_dict, saved)
@@ -145,9 +158,9 @@ def main(camp='dycoms'):
         else:
             print(f"Train data not found or being fully reloaded at {train_jl_path}")
         dask_scratch = os.path.join(os.environ.get('PSCRATCH', '~/tmp'), 'dask-scratch-space')
-        client = Client(n_workers=32, threads_per_worker=1, processes=True, local_directory=dask_scratch)
+        client = Client(n_workers=n_workers, threads_per_worker=1, processes=True, local_directory=dask_scratch)
         print(f"Dask dashboard available at: {client.dashboard_link}")
-        print(f"Using 32 Processes. Scratch: {dask_scratch}")
+        print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
         tasks = []
         for ippe in ppe_idx:
             # ippe carries 'sim_config' for the correct per-member directory;
@@ -197,7 +210,7 @@ def main(camp='dycoms'):
     vars_to_load = var_interest
     if os.path.exists(tgt_jl_path):
         print(f"Loading target data from {tgt_jl_path}")
-        nc_dict[target_sim_config] = joblib.load(tgt_jl_path)
+        nc_dict[target_sim_config] = cl.invalidate_stale_vars(joblib.load(tgt_jl_path))
         # Load global attributes
         print(f"Loading global attributes for {target_sim_config}")
         finfo_target = tgt_file_info.copy()
@@ -235,9 +248,9 @@ def main(camp='dycoms'):
         else:
             print(f"Target data not found or being fully reloaded at {tgt_jl_path}")
         dask_scratch = os.path.join(os.environ.get('PSCRATCH', '~/tmp'), 'dask-scratch-space')
-        client = Client(n_workers=32, threads_per_worker=1, processes=True, local_directory=dask_scratch)
+        client = Client(n_workers=n_workers, threads_per_worker=1, processes=True, local_directory=dask_scratch)
         print(f"Dask dashboard available at: {client.dashboard_link}")
-        print(f"Using 32 Processes. Scratch: {dask_scratch}")
+        print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
         tasks = []
         for initcond_combo in itertools.product(*vars_strs):
             # CRITICAL: Create a separate copy for each combo to avoid mutating the shared reference

@@ -23,6 +23,13 @@ import joblib
 import argparse
 import sys
 from tqdm.auto import tqdm
+import platform
+
+hostname = socket.gethostname()
+if hostname == "simurgh":
+    n_workers = 32
+else:
+    n_workers = 8
 
 # Disable the background monitor thread entirely
 tqdm.monitor_interval = 0  # <- important
@@ -38,7 +45,7 @@ os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 # LOW: LOW includes only samples within the bound of the most recent PPE (last entry of the ppe_basename)
 # MID: MID is somewhere in between, including all samples with parameters within the range of the 
 # most recent PPE plus a buffer size.
-sting_lvl = 'MID'
+sting_lvl = 'HI'
 buffer_size = 2
 l_dry_run = False
 
@@ -47,20 +54,34 @@ def main(camp='dycoms'):
     # Configuration
     l_parallel = True
     l_testing = False
-    n_workers = 32
     n_test = n_workers
-    l_pert = True
 
-    ppe_basename = ['fullmp_dycoms_test57_select',]
+    ppe_basename = [
+                    'fullmp_dycoms_offpolicy_r2_clip_freeparam_lhs',
+                    ]
 
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
-    target_sim_config = f'fullmp_{camp}_tgt_pert'
-    steady_state_hrs = 2
+    # target_sim_config = f'NCE_{camp}_tgt'
+
+    if 'NCE' in ppe_basename[0]:
+        target_sim_config = f'NCE_{camp}_tgt'
+        l_pert = False
+    else:
+        target_sim_config = f'fullmp_{camp}_tgt_pert_oldcoalkernel'
+        l_pert = True
+
 
     if camp == 'rico':
         steady_state_hrs = 5
+        min_files = 33
+        onset_skip_hrs = 1.5
     elif camp == 'dycoms':
         steady_state_hrs = 2
+        min_files = 25
+        onset_skip_hrs = 0.5
+    else:
+        min_files = None
+        onset_skip_hrs = 0.0
 
     lwp_threshold = 0.02 # equiv to 50 g/m2
     print('lwp_threshold:', lwp_threshold)
@@ -79,7 +100,7 @@ def main(camp='dycoms'):
     # CSV listing parameters actually perturbed (first column = param names);
     # only used when sim_config_str ends with '_select'
     select_params_csv = os.path.join(os.path.dirname(__file__),
-                                     'perturbation_design/test37_perturbation_parameters.csv')
+                                     'perturbation_design/test62_perturbation_parameters.csv')
 
     # mconfigs = os.listdir(cl.output_dir + datedir) # this line seems unused and might fail if sim_configs is list, but it uses os.listdir(cl.output_dir + datedir) which is fine if datedir is empty string and output_dir is base. 
     # But wait, cl.output_dir + datedir is just the date dir. 
@@ -91,11 +112,13 @@ def main(camp='dycoms'):
     var_interest += [
                      'M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss', 
                      'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss', 
-                     'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
-                     'prate_dm_ss', 'prate_ds_ss', 'prate_90th_ss',
-                     'KY346_dm_ss', 'KY346_99th_ss',
-                     'KX_dm_ss', 'KX_99th_ss',
+                     # 'KX_dm_ss', 'KY346_dm_ss',
                     ] # domain-mean path
+
+    if 'fullmp' in ppe_basename[0]:
+        var_interest += [
+                     'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss', 'prate_dm_ss',
+                ]
 
 #     var_interest += [
 #             # 'sfM0_per5lvl', 'sfM3_per5lvl', 'sfM4_per5lvl', 'sfM6_per5lvl',
@@ -116,7 +139,9 @@ def main(camp='dycoms'):
 
     file_info.update({'sim_config': sim_configs,
                     'date': datedir,
-                    'mp_config': train_mp})
+                    'mp_config': train_mp,
+                    'min_files': min_files,
+                    'onset_skip_hrs': onset_skip_hrs})
     ppe_idx = cl.get_pert_idx(file_info)
 
     # Filter PPE members based on stinginess level
@@ -148,9 +173,9 @@ def main(camp='dycoms'):
     # Let's use sim_configs[0] for the filename prefix if it's a list.
     
     if l_testing:
-        nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{lwp_threshold}_test_N{n_test}.nc"
+        nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{round(lwp_threshold*1e3)}_test_N{n_test}.nc"
     else:
-        nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{lwp_threshold}_N{len(ppe_idx)}.nc"
+        nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{round(lwp_threshold*1e3)}_N{len(ppe_idx)}.nc"
 
     if l_parallel:
         # On compute nodes, use processes (True) for library isolation (NetCDF is often not thread-safe).
@@ -163,11 +188,47 @@ def main(camp='dycoms'):
         print(f"Dask dashboard available at: {client.dashboard_link}")
         print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
 
+    def _sanitize_sim_payload(payload, expected_sim_config):
+        """
+        Strip cross-contamination from a per-sim_config cache payload.
+        Earlier buggy runs sometimes saved a dict whose top level contained
+        OTHER sim_config keys (e.g. {'configA': {...}, 'configB': {...}})
+        instead of the expected {'SLC-BOSS': {...}, 'z': ..., ...} layout.
+        If we detect that pattern, unwrap to the inner dict matching this
+        sim_config (and drop the rest).
+        """
+        if not isinstance(payload, dict):
+            return payload
+        nested_self = expected_sim_config in payload and isinstance(payload[expected_sim_config], dict)
+        nested_others = any(
+            (k != expected_sim_config and isinstance(v, dict)
+             and ('SLC-BOSS' in v or 'BIN-TAU' in v))
+            for k, v in payload.items()
+        )
+        if nested_self and (nested_others or 'SLC-BOSS' not in payload):
+            inner = payload[expected_sim_config]
+            print(f"  [sanitize] unwrapping nested cache for {expected_sim_config}; "
+                  f"dropped extra keys: {[k for k in payload if k != expected_sim_config]}")
+            return inner
+        # Drop any stray sibling sim_config keys without unwrapping
+        strays = [k for k, v in payload.items()
+                  if isinstance(v, dict) and k != expected_sim_config
+                  and ('SLC-BOSS' in v or 'BIN-TAU' in v)]
+        if strays:
+            print(f"  [sanitize] dropping stray sim_config keys from cache: {strays}")
+            for k in strays:
+                del payload[k]
+        return payload
+
     for sim_config in sim_configs:
-        train_jl_path = f"{cl.output_dir}/{datedir}/joblibs/{sim_config}.joblib"
+        # NB: one joblib cache per sim_config — using sim_config_str (= sim_configs[-1])
+        # here caused every iteration to share the last config's cache file.
+        train_jl_path = f"{cl.output_dir}/{datedir}/joblibs/{sim_config}_lwpthres{round(lwp_threshold*1e3)}.joblib"
         if os.path.exists(train_jl_path):
             print(f"Loading {sim_config} data from {train_jl_path}")
-            nc_dict[sim_config] = joblib.load(train_jl_path)
+            nc_dict[sim_config] = cl.invalidate_stale_vars(
+                _sanitize_sim_payload(joblib.load(train_jl_path), sim_config)
+            )
 
             # Load global attributes from the first valid member
             ppe_idx_sim = [ippe for ippe in ppe_idx if (isinstance(ippe, dict) and ippe['sim_config'] == sim_config) or (not isinstance(ippe, dict) and sim_config == sim_configs[0])]
@@ -177,23 +238,33 @@ def main(camp='dycoms'):
                 finfo_attr['sim_config'] = sim_config
                 cl.load_cm1_attrs(finfo_attr, nc_dict=nc_dict, ipert=ppe_idx_sim[0], continuous_ic=True)
 
-            # Check for missing variables in cached data and reload if needed
+            # Check for missing variables AND missing members in cached data.
+            # The cache may have been built from a smaller ppe_idx, or earlier
+            # corrupt-file crashes may have left some global_ids absent.
             try:
-                first_item = ppe_idx_sim[0]
-                if isinstance(first_item, dict):
-                    gid = first_item['global_id']
-                else:
-                    gid = int(first_item) if str(first_item).isdigit() else 0
-                existing_vars = nc_dict[sim_config][train_mp]['cic'][gid].keys()
-                ppe_vars_to_load = [v for v in var_interest if v not in existing_vars]
-            except (KeyError, IndexError):
-                ppe_vars_to_load = var_interest
+                cached = nc_dict[sim_config][train_mp]['cic']
+            except KeyError:
+                cached = {}
+            ppe_vars_to_load = set()
+            members_to_reload = []
+            for ippe in ppe_idx_sim:
+                gid = ippe['global_id'] if isinstance(ippe, dict) else (int(ippe) if str(ippe).isdigit() else None)
+                member_dict = cached.get(gid)
+                if member_dict is None:
+                    members_to_reload.append(ippe)
+                    ppe_vars_to_load.update(var_interest)
+                    continue
+                missing = [v for v in var_interest if v not in member_dict]
+                if missing:
+                    members_to_reload.append(ippe)
+                    ppe_vars_to_load.update(missing)
+            ppe_vars_to_load = list(ppe_vars_to_load)
 
-            if ppe_vars_to_load:
-                print(f"Missing PPE variables in cache: {ppe_vars_to_load}. Reloading...")
+            if members_to_reload:
+                print(f"Reloading {len(members_to_reload)}/{len(ppe_idx_sim)} members for {sim_config}; vars: {ppe_vars_to_load}")
                 if l_parallel:
                     tasks = []
-                    for ippe in ppe_idx_sim:
+                    for ippe in members_to_reload:
                         task = dask.delayed(cl.load_cm1)(
                             file_info, ppe_vars_to_load, steady_state_hrs, nc_dict=None, continuous_ic=True,
                             ipert=ippe, lwp_threshold=lwp_threshold
@@ -205,9 +276,10 @@ def main(camp='dycoms'):
                     for r in tqdm(results, desc=f'merging missing PPE vars for {sim_config}'):
                         cl.deep_merge(nc_dict, r)
                 else:
-                    pbar = tqdm(ppe_idx_sim, desc=f'loading missing PPE vars for {sim_config}')
+                    pbar = tqdm(members_to_reload, desc=f'loading missing PPE vars for {sim_config}')
                     for ippe in pbar:
                         cl.load_cm1(file_info, ppe_vars_to_load, steady_state_hrs, nc_dict=nc_dict, continuous_ic=True, ipert=ippe, lwp_threshold=lwp_threshold, pbar=pbar)
+                nc_dict[sim_config] = _sanitize_sim_payload(nc_dict[sim_config], sim_config)
                 joblib.dump(nc_dict[sim_config], train_jl_path)
                 print(f"Updated cache saved to {train_jl_path}")
 
@@ -238,16 +310,17 @@ def main(camp='dycoms'):
                 for ippe in pbar:
                     cl.load_cm1(file_info, var_interest, steady_state_hrs, nc_dict=nc_dict, continuous_ic=True, ipert=ippe, lwp_threshold=lwp_threshold, pbar=pbar)
 
+            nc_dict[sim_config] = _sanitize_sim_payload(nc_dict[sim_config], sim_config)
             joblib.dump(nc_dict[sim_config], train_jl_path)
             print(f"Dictionary saved to {train_jl_path}")
 
     # Load target data
     print("\nLoading target data...")
-    tgt_jl_path = f"{cl.output_dir}/{target_datedir}/joblibs/{target_sim_config}.joblib"
+    tgt_jl_path = f"{cl.output_dir}/{target_datedir}/joblibs/{target_sim_config}_lwpthres{round(lwp_threshold*1e3)}.joblib"
     vars_to_load = var_interest
     if os.path.exists(tgt_jl_path):
         print(f"Loading target data from {tgt_jl_path}")
-        nc_dict[target_sim_config] = joblib.load(tgt_jl_path)
+        nc_dict[target_sim_config] = cl.invalidate_stale_vars(joblib.load(tgt_jl_path))
         
         # Load global attributes
         print(f"Loading global attributes for {target_sim_config}")
@@ -582,10 +655,10 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, date
         for var_vn in vars_vn:
             if ncvars[var_vn + '_PPE']['data'] is None:
                 ncvars[var_vn + '_PPE']['data'] = np.zeros((len(ppe_idx),))
-            
+
             # Retrieve value from nc_dict using global dict key
             ncvars[var_vn + '_PPE']['data'][i] = nc_dict[current_config][train_mp][ic_str][global_id][var_vn]
-    
+
     # Load summary variables
     for ivar in var_interest:
         # Re-construct list of values using ppe indices (which are global IDs in nc_dict)
@@ -598,7 +671,7 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, date
                 idx = int(ppe_item)
                 item_config = sim_configs[0] if isinstance(sim_configs, list) else sim_configs
             data_list.append(nc_dict[item_config][train_mp][ic_str][idx][ivar]['value'])
-            
+
         ncvars['ppe_' + ivar]['data'] = np.array(data_list)
 
     return ncvars, dims
