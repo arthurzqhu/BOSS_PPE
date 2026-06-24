@@ -6,6 +6,12 @@
 # In[1]:
 
 
+import multiprocessing as _mp
+try:
+    _mp.set_start_method('fork', force=True)
+except RuntimeError:
+    pass  # already set
+
 import cm1_load_utils as cl
 import load_ppe_fun as lp
 import numpy as np
@@ -19,6 +25,7 @@ from matplotlib.ticker import NullLocator
 import itertools
 import importlib
 import dask
+dask.config.set({"distributed.worker.multiprocessing-method": "fork"})
 from dask.distributed import Client, progress
 import joblib
 
@@ -33,20 +40,40 @@ importlib.reload(cl)
 # In[ ]:
 
 
-nikki = '2026-04-08'
+import argparse as _argparse
+import datetime as _datetime
+_p = _argparse.ArgumentParser(add_help=False)
+_p.add_argument('--nikki', type=str, default=_datetime.date.today().strftime('%Y-%m-%d'))
+_p.add_argument('--camp', choices=['rico', 'dycoms'], default=None,
+                help="Campaign name. If omitted, auto-detected from sim_config.")
+_p.add_argument('--sim_config', type=str, default=None,
+                help="Run config name, e.g. 'fullmp_rico_test_resol'. "
+                     "Defaults to 'fullmp_<camp>_test_resol'.")
+_p.add_argument('--target_sim_config', type=str, default=None,
+                help="Defaults to 'fullmp_{camp}_tgt_NewCoalKernel_pert'.")
+_a, _ = _p.parse_known_args()
+
+nikki = _a.nikki
 target_nikki = 'target'
-camp = 'rico'
-sim_config = 'fullmp_rico_test_resol'
-sim_config = sim_config.replace('dycoms', camp)
+
+camps = ['rico', 'dycoms']
+if _a.camp is not None:
+    camp = _a.camp
+elif _a.sim_config is not None:
+    _matches = [c for c in camps if c in _a.sim_config]
+    if len(_matches) != 1:
+        raise ValueError(f"Could not auto-detect camp from sim_config={_a.sim_config!r}; "
+                         f"matched {_matches}. Pass --camp explicitly.")
+    camp = _matches[0]
+else:
+    camp = 'dycoms'
+sim_config = _a.sim_config if _a.sim_config is not None else f'fullmp_{camp}_test_resol'
 # sim_configs = [simr2_config]
 l_pert = True
 lwp_threshold = 0
 ss_hr = 2
-target_sim_config = 'fullmp_{camp}_tgt_pert'
-# sim2cat_config = 'fullmp_dycoms_2cat'
-# target_sim_config = 'fullmp_rico_tgt_10min'
-# sim_config = 'boss_dycoms_2hr_NCE_satadj_ratio=1'
-# target_sim_config = 'tau_dycoms_2hr_NCE'
+# target_sim_config = _a.target_sim_config if _a.target_sim_config is not None else f'NCE_{camp}_tgt'
+target_sim_config = _a.target_sim_config if _a.target_sim_config is not None else f'fullmp_{camp}_tgt_NewCoalKernel_pert'
 
 sim_configs = [sim_config]
 
@@ -63,10 +90,20 @@ mconfigs = os.listdir(cl.output_dir + nikki)
 vars_strs, vars_vn = lp.get_dics(cl.output_dir, nikki, sim_config, n_init)
 var_interest = ['M0_dmpath', 'M3_dmpath', 'M4_dmpath', 'M6_dmpath', 'prate_dm',
                 'M0_dmprof', 'M3_dmprof', 'M4_dmprof', 'M6_dmprof',
+                # 'adv_M0_dmprof', 'adv_M3_dmprof', 'adv_M4_dmprof', 'adv_M6_dmprof',
+                'evap_M0_dmprof', 'evap_M3_dmprof', 'evap_M4_dmprof', 'evap_M6_dmprof',
+                'sedflux_M0_dmprof', 'sedflux_M3_dmprof', 'sedflux_M4_dmprof', 'sedflux_M6_dmprof',
+                'vfall_M0_dmprof', 'vfall_M3_dmprof', 'vfall_M4_dmprof', 'vfall_M6_dmprof',
+                'meanD_03_dmprof', 'meanD_34_dmprof', 'meanD_36_dmprof', 'meanD_06_dmprof',
+                'M0_curtainlast', 'M3_curtainlast', 'M4_curtainlast', 'M6_curtainlast',
+                # 'adv_M0_curtainlast', 'adv_M3_curtainlast', 'adv_M4_curtainlast', 'adv_M6_curtainlast',
+                'evap_M0_curtainlast', 'evap_M3_curtainlast', 'evap_M4_curtainlast', 'evap_M6_curtainlast',
+                'sedflux_M0_curtainlast', 'sedflux_M3_curtainlast', 'sedflux_M4_curtainlast', 'sedflux_M6_curtainlast',
+                'vfall_M0_curtainlast', 'vfall_M3_curtainlast', 'vfall_M4_curtainlast', 'vfall_M6_curtainlast',
+                'meanD_03_curtainlast', 'meanD_34_curtainlast', 'meanD_36_curtainlast', 'meanD_06_curtainlast',
                 'M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss',
                 'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss',
-                'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
-                'prate_dm_ss', 'prate_ds_ss', 'prate_90th_ss',
+                'prate_dm_ss', 'prate_ds_ss', 'v_precip_onset', 'precip_frac_ss',
                  ] # domain-mean path
 # var_interest += ['M0_curtain_mean', 'M3_curtain_mean', 'M4_curtain_mean', 'M6_curtain_mean'] # curtain
                 # ] # last 2 hr mean path
@@ -203,6 +240,7 @@ else:
 
 
 time = nc_dict[sim_config]['time']/3600
+print(time.shape, time, sim_config)
 
 color_order = ['tab:blue', 'tab:orange']
 mp_markers = ['o', '*']
@@ -304,7 +342,7 @@ for case in vars_strs[0]:
 
     plt.tight_layout()
     # Use bbox_inches='tight' to ensure the legend at the top is fully captured in the saved figure
-    plt.savefig(f"{plot_dir}{case}_dm_path_r1.pdf", bbox_inches='tight')
+    plt.savefig(f"{plot_dir}{case}_dm_path_r1.png", bbox_inches='tight')
 
 
 # ## profs
@@ -312,45 +350,105 @@ for case in vars_strs[0]:
 # In[9]:
 
 
-varsplot = ['M0_dmprof', 'M3_dmprof', 'M4_dmprof', 'M6_dmprof']
-# varsplot = ['M0_dmprof', 'M3_dmprof', 'M4_dmprof', 'M6_dmprof', 'meanD_03_dm']
+def _plot_prof_panel(varsplot, fname_suffix, use_abs=False, sentinel_thresh=1e20,
+                     linear=False, vlim=None, zero_thresh=0.0):
+    """4-moment profile pcolormesh figure, modeled on the original profs block.
 
-for case in vars_strs[0]:
-    fig, axs = plt.subplots(len(color_order), len(varsplot), figsize=(12, 5), sharex=True, sharey=True)
-    for i, var in enumerate(varsplot):
+    varsplot: list of 4 var_names (e.g. M*_dmprof / evap_M*_dmprof / sedflux_M*_dmprof).
+    fname_suffix: filename suffix written after sim_config_<case>_.
+    use_abs: if True, plot |data| (evap/sedflux can be signed). Masks |data| > sentinel_thresh as NaN.
+    linear: linear color scale (default log).
+    vlim: (vmin, vmax) override; otherwise limits are auto-derived from the union of
+          all rows' data so SLC and BIN share identical limits per column.
+    zero_thresh: cells with |data| <= zero_thresh are masked to NaN (rendered white).
+                 Only applied in linear mode (log mode already masks <=0).
+    """
+    def _clean(arr):
+        a = np.asarray(arr).copy().astype(float)
+        if use_abs:
+            a = np.abs(a)
+        a[~np.isfinite(a)] = np.nan
+        a[np.abs(a) > sentinel_thresh] = np.nan
+        return a
+
+    # build a colormap whose 'bad' (NaN) color is white so empty cells appear blank
+    cmap = plt.get_cmap('jet').copy()
+    cmap.set_bad('white')
+
+    def _collect_rowdata(case, var):
+        """Return ordered list of (j, data) for the rows in figure order."""
+        rowdata = []
         j = 0
-        units = cl.output_var_set[var]['var_unit']
-        longname = cl.output_var_set[var]['longname']
-        shortname = longname.replace("Domain-Mean", "DM")
-        im_thiscol = [None] * len(color_order)
         for idx in idx_to_plot:
             sc = all_sim_configs[idx]
             for mp in nc_dict[sc].keys():
                 if any(x in mp for x in ['time', 'x', 'y', 'z']):
                     continue
+                case_dict = nc_dict[sc][mp].get(case, {})
                 if 'BIN' in mp and l_pert:
-                    data = nc_dict[sc][mp][case][1][var]['value'].T.copy()
+                    entry = case_dict.get(1, {}).get(var)
                 else:
-                    data = nc_dict[sc][mp][case][var]['value'].T.copy()
-                # Ensure SLC-BOSS uses BIN-TAU's colorbar limits and set colorbar to log scale
-                if 'TAU' not in mp:
-                    # Find the corresponding BIN-TAU data for colorbar normalization
-                    bin_data = nc_dict[target_sim_config][target_mp][case][1][var]['value'].T
-                    vmin = np.percentile(bin_data[bin_data > 0], 1)
-                    vmax = np.nanmax(bin_data)
+                    entry = case_dict.get(var)
+                data = _clean(entry['value'].T) if entry is not None else None
+                rowdata.append((j, data))
+                j += 1
+        return rowdata
+
+    for case in vars_strs[0]:
+        fig, axs = plt.subplots(len(color_order), len(varsplot),
+                                figsize=(max(4, 3 * len(varsplot)), 5),
+                                sharex=True, sharey=True, squeeze=False)
+        for i, var in enumerate(varsplot):
+            if var not in cl.output_var_set:
+                continue
+            units = cl.output_var_set[var]['var_unit']
+            longname = cl.output_var_set[var]['longname']
+            shortname = longname.replace("Domain-Mean", "DM")
+            im_thiscol = [None] * len(color_order)
+
+            rowdata = _collect_rowdata(case, var)
+
+            # Shared color limits per column, derived from the union of all rows.
+            if vlim is not None:
+                vmin, vmax = vlim
+            else:
+                all_vals = [d.ravel() for _, d in rowdata if d is not None]
+                if not all_vals:
+                    continue
+                stacked = np.concatenate(all_vals)
+                if linear:
+                    valid = stacked[np.isfinite(stacked)]
                 else:
-                    # For BIN-TAU, also use log scale
-                    data_pos = data[data > 0]
-                    if data_pos.size > 0:
-                        vmin = np.percentile(data_pos, 1)
-                        vmax = np.nanmax(data)
-                data[data <= vmin] = np.nan
-                im = axs[j, i].pcolormesh(time, z, data, 
-                                          norm=LogNorm(vmin=vmin, vmax=vmax), 
-                                          cmap='jet', 
+                    valid = stacked[np.isfinite(stacked) & (stacked > 0)]
+                if valid.size == 0:
+                    continue
+                if linear:
+                    vmin = float(np.nanmin(valid))
+                    vmax = float(np.nanmax(valid))
+                    if vmin == vmax:
+                        vmax = vmin + 1e-12
+                else:
+                    vmin = float(np.percentile(valid, 1))
+                    vmax = float(np.nanmax(valid))
+
+            for j, data in rowdata:
+                if data is None:
+                    continue
+                if linear:
+                    data = np.where((np.abs(data) > zero_thresh) & np.isfinite(data),
+                                    data, np.nan)
+                    norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+                else:
+                    data = np.where((data > 0) & np.isfinite(data), data, np.nan)
+                    data = np.where(data > vmin, data, np.nan)
+                    norm = LogNorm(vmin=vmin, vmax=vmax)
+                im = axs[j, i].pcolormesh(time, z, data,
+                                          norm=norm,
+                                          cmap=cmap,
                                           rasterized=True)
-                # Annotate the top right corner of each subplot with mp
-                axs[j, i].annotate(mp_labels[j], xy=(0.97, 0.85), xycoords='axes fraction', ha='right', va='bottom', fontsize=12, fontweight='bold')
+                axs[j, i].annotate(mp_labels[j], xy=(0.97, 0.85),
+                                   xycoords='axes fraction', ha='right', va='bottom',
+                                   fontsize=12, fontweight='bold')
                 im_thiscol[j] = im
                 if j == 0:
                     axs[j, i].set_title(longname, fontsize=14)
@@ -358,33 +456,176 @@ for case in vars_strs[0]:
                     axs[j, i].set_ylabel('Height [m]', fontsize=12)
                 if j == len(color_order) - 1:
                     axs[j, i].set_xlabel('Time [hr]', fontsize=12)
+
+            bb_row0 = axs[0, i].get_position(fig)
+            bb_row1 = axs[1, i].get_position(fig)
+            cb_left = min(bb_row0.xmin, bb_row1.xmin)
+            cb_right = max(bb_row0.xmax, bb_row1.xmax)
+            cb_width = cb_right - cb_left
+            cb_height = 0.025
+            cb_pad = 0.15
+            cb_bottom = bb_row1.ymin - cb_pad - cb_height
+            cb_ax = fig.add_axes([cb_left, cb_bottom, cb_width, cb_height])
+            last_im = next((im for im in im_thiscol if im is not None), None)
+            if last_im is not None:
+                cbar = fig.colorbar(last_im, cax=cb_ax, orientation='horizontal')
+                cbar.ax.tick_params(labelsize=10)
+                prefix = '|' if use_abs else ''
+                suffix = '|' if use_abs else ''
+                cbar.set_label(f"{prefix}{shortname}{suffix} [{units}]", fontsize=12)
+        plt.savefig(f"{plot_dir}{sim_config}_{case}_{fname_suffix}.png", bbox_inches='tight')
+        plt.close(fig)
+
+
+_plot_prof_panel(['M0_dmprof', 'M3_dmprof', 'M4_dmprof', 'M6_dmprof'],
+                 fname_suffix='dm_prof')
+# _plot_prof_panel(['adv_M0_dmprof', 'adv_M3_dmprof', 'adv_M4_dmprof', 'adv_M6_dmprof'],
+#                  fname_suffix='adv_dmprof', use_abs=True)
+_plot_prof_panel(['evap_M0_dmprof', 'evap_M3_dmprof', 'evap_M4_dmprof', 'evap_M6_dmprof'],
+                 fname_suffix='evap_dmprof', use_abs=True)
+_plot_prof_panel(['sedflux_M0_dmprof', 'sedflux_M3_dmprof', 'sedflux_M4_dmprof', 'sedflux_M6_dmprof'],
+                 fname_suffix='sedflux_dmprof', use_abs=True)
+_plot_prof_panel(['vfall_M0_dmprof', 'vfall_M3_dmprof', 'vfall_M4_dmprof', 'vfall_M6_dmprof'],
+                 fname_suffix='vfall_dmprof', use_abs=True, linear=True, zero_thresh=1e-12)
+_plot_prof_panel(['meanD_03_dmprof', 'meanD_34_dmprof', 'meanD_36_dmprof', 'meanD_06_dmprof'],
+                 fname_suffix='meanD_dmprof', zero_thresh=1e-6)
+
+
+# ## curtain plots (last timestep, y-averaged) — (z, x)
+
+
+def _plot_curtain_panel(varsplot, fname_suffix, use_abs=False, sentinel_thresh=1e20,
+                        linear=False, vlim=None, zero_thresh=0.0):
+    """Last-time curtain figure: x on horizontal axis, z on vertical.
+
+    Same conventions as _plot_prof_panel. Each variable is loaded as a (z, x)
+    array (y-averaged at the final timestep).
+    """
+    def _clean(arr):
+        a = np.asarray(arr).copy().astype(float)
+        if use_abs:
+            a = np.abs(a)
+        a[~np.isfinite(a)] = np.nan
+        a[np.abs(a) > sentinel_thresh] = np.nan
+        return a
+
+    cmap = plt.get_cmap('jet').copy()
+    cmap.set_bad('white')
+
+    def _collect_rowdata(case, var):
+        rowdata = []
+        j = 0
+        for idx in idx_to_plot:
+            sc = all_sim_configs[idx]
+            for mp in nc_dict[sc].keys():
+                if any(x in mp for x in ['time', 'x', 'y', 'z']):
+                    continue
+                case_dict = nc_dict[sc][mp].get(case, {})
+                if 'BIN' in mp and l_pert:
+                    entry = case_dict.get(1, {}).get(var)
+                else:
+                    entry = case_dict.get(var)
+                data = _clean(entry['value']) if entry is not None else None
+                rowdata.append((j, data))
                 j += 1
+        return rowdata
 
-        # Make colorbar its own row beneath both subplot rows for this column,
-        # but *significantly* increase the gap so the colorbar is far below xlabels and there's no overlap.
-        # This workaround uses fig.add_axes & manual positioning rather than tight_layout.
-        # You may need to tune cb_pad for more/less vertical space.
+    for case in vars_strs[0]:
+        fig, axs = plt.subplots(len(color_order), len(varsplot),
+                                figsize=(max(4, 3 * len(varsplot)), 5),
+                                sharex=True, sharey=True, squeeze=False)
+        for i, var in enumerate(varsplot):
+            if var not in cl.output_var_set:
+                continue
+            units = cl.output_var_set[var]['var_unit']
+            longname = cl.output_var_set[var]['longname']
+            shortname = longname.replace("Domain-Mean", "DM")
+            im_thiscol = [None] * len(color_order)
 
-        # Get bounding boxes for column i for both rows
-        bb_row0 = axs[0, i].get_position(fig)
-        bb_row1 = axs[1, i].get_position(fig)
-        # The colorbar should span the union of the two widths, and be below the bottom axis
-        cb_left = min(bb_row0.xmin, bb_row1.xmin)
-        cb_right = max(bb_row0.xmax, bb_row1.xmax)
-        cb_width = cb_right - cb_left
-        cb_height = 0.025
+            rowdata = _collect_rowdata(case, var)
 
-        # Place colorbar well below the xlabels (adjust cb_pad as needed)
-        cb_pad = 0.15  # Large enough gap for safety
-        cb_bottom = bb_row1.ymin - cb_pad - cb_height
+            if vlim is not None:
+                vmin, vmax = vlim
+            else:
+                all_vals = [d.ravel() for _, d in rowdata if d is not None]
+                if not all_vals:
+                    continue
+                stacked = np.concatenate(all_vals)
+                if linear:
+                    valid = stacked[np.isfinite(stacked)]
+                else:
+                    valid = stacked[np.isfinite(stacked) & (stacked > 0)]
+                if valid.size == 0:
+                    continue
+                if linear:
+                    vmin = float(np.nanmin(valid))
+                    vmax = float(np.nanmax(valid))
+                    if vmin == vmax:
+                        vmax = vmin + 1e-12
+                else:
+                    vmin = float(np.percentile(valid, 1))
+                    vmax = float(np.nanmax(valid))
 
-        cb_ax = fig.add_axes([cb_left, cb_bottom, cb_width, cb_height])
-        cbar = fig.colorbar(im_thiscol[-1], cax=cb_ax, orientation='horizontal')
-        cbar.ax.tick_params(labelsize=10)
-        cbar.set_label(f"{shortname} [{units}]", fontsize=12)
-    # plt.tight_layout()
-    # plt.savefig(f"{sim_config}_dm_prof.pdf")
-    plt.savefig(f"{plot_dir}{sim_config}_{case}_dm_prof.pdf", bbox_inches='tight')
+            for j, data in rowdata:
+                if data is None:
+                    continue
+                # per-row x coord (in case domains differ between SLC and BIN)
+                sc_j = all_sim_configs[idx_to_plot[j]]
+                x_j = nc_dict[sc_j]['x']
+                z_j = nc_dict[sc_j]['z']
+                if linear:
+                    data = np.where((np.abs(data) > zero_thresh) & np.isfinite(data),
+                                    data, np.nan)
+                    norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+                else:
+                    data = np.where((data > 0) & np.isfinite(data), data, np.nan)
+                    data = np.where(data > vmin, data, np.nan)
+                    norm = LogNorm(vmin=vmin, vmax=vmax)
+                im = axs[j, i].pcolormesh(x_j, z_j, data,
+                                          norm=norm, cmap=cmap, rasterized=True)
+                axs[j, i].annotate(mp_labels[j], xy=(0.97, 0.85),
+                                   xycoords='axes fraction', ha='right', va='bottom',
+                                   fontsize=12, fontweight='bold')
+                im_thiscol[j] = im
+                if j == 0:
+                    axs[j, i].set_title(longname, fontsize=14)
+                if i == 0:
+                    axs[j, i].set_ylabel('Height [m]', fontsize=12)
+                if j == len(color_order) - 1:
+                    axs[j, i].set_xlabel('x [m]', fontsize=12)
+
+            bb_row0 = axs[0, i].get_position(fig)
+            bb_row1 = axs[1, i].get_position(fig)
+            cb_left = min(bb_row0.xmin, bb_row1.xmin)
+            cb_right = max(bb_row0.xmax, bb_row1.xmax)
+            cb_width = cb_right - cb_left
+            cb_height = 0.025
+            cb_pad = 0.15
+            cb_bottom = bb_row1.ymin - cb_pad - cb_height
+            cb_ax = fig.add_axes([cb_left, cb_bottom, cb_width, cb_height])
+            last_im = next((im for im in im_thiscol if im is not None), None)
+            if last_im is not None:
+                cbar = fig.colorbar(last_im, cax=cb_ax, orientation='horizontal')
+                cbar.ax.tick_params(labelsize=10)
+                prefix = '|' if use_abs else ''
+                suffix = '|' if use_abs else ''
+                cbar.set_label(f"{prefix}{shortname}{suffix} [{units}]", fontsize=12)
+        plt.savefig(f"{plot_dir}{sim_config}_{case}_{fname_suffix}.png", bbox_inches='tight')
+        plt.close(fig)
+
+
+_plot_curtain_panel(['M0_curtainlast', 'M3_curtainlast', 'M4_curtainlast', 'M6_curtainlast'],
+                    fname_suffix='dm_curtainlast')
+# _plot_curtain_panel(['adv_M0_curtainlast', 'adv_M3_curtainlast', 'adv_M4_curtainlast', 'adv_M6_curtainlast'],
+#                     fname_suffix='adv_curtainlast', use_abs=True)
+_plot_curtain_panel(['evap_M0_curtainlast', 'evap_M3_curtainlast', 'evap_M4_curtainlast', 'evap_M6_curtainlast'],
+                    fname_suffix='evap_curtainlast', use_abs=True)
+_plot_curtain_panel(['sedflux_M0_curtainlast', 'sedflux_M3_curtainlast', 'sedflux_M4_curtainlast', 'sedflux_M6_curtainlast'],
+                    fname_suffix='sedflux_curtainlast', use_abs=True)
+_plot_curtain_panel(['vfall_M0_curtainlast', 'vfall_M3_curtainlast', 'vfall_M4_curtainlast', 'vfall_M6_curtainlast'],
+                    fname_suffix='vfall_curtainlast', use_abs=True, linear=True, zero_thresh=1e-12)
+_plot_curtain_panel(['meanD_03_curtainlast', 'meanD_34_curtainlast', 'meanD_36_curtainlast', 'meanD_06_curtainlast'],
+                    fname_suffix='meanD_curtainlast', zero_thresh=1e-6)
 
 
 # # comparison between cases
@@ -402,9 +643,10 @@ x = nc_dict[target_sim_config]['x']
 z = nc_dict[target_sim_config]['z']*1e3
 plt.rc('font', size=16)
 cases = vars_strs[0]
-var_na_sens = ['M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss',
+var_na_sens = [
+               'M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss',
                'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss',
-                 'prate_dm_ss', 'prate_ds_ss', 'v_precip_onset', 'precip_frac_ss',
+               'prate_dm_ss', 'prate_ds_ss', 'v_precip_onset', 'precip_frac_ss',
                 ] # last 2 hr mean path
 
 
@@ -451,4 +693,4 @@ fig.legend(handles, mp_labels, loc='lower center', bbox_to_anchor=(0.5, -0.08), 
 fig.suptitle("Sensitivity of Domain-Mean Variables on $n_{aero}$", fontsize=20)
 plt.tight_layout()
 
-plt.savefig(f"{plot_dir}{sim_config}_na_sensitivity.pdf", bbox_inches='tight')
+plt.savefig(f"{plot_dir}{sim_config}_na_sensitivity.png", bbox_inches='tight')
