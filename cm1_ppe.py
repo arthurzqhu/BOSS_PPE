@@ -37,7 +37,7 @@ def main(camp='dycoms'):
     lwp_threshold = 0.02
 
     ppe_basename = [
-                    'fullmp_dycoms_offpolicy_r2_clip_freeparam_lhs',
+                    'fullmp_dycoms_offpolicy_r5_bky_lhs',
                     ]
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
     # sim_config_str is used for joblib paths, plot dirs, and saved-file names
@@ -394,11 +394,101 @@ def main(camp='dycoms'):
 
             axs[ivar].set_title(cl.output_var_set[var_name]['longname'])
             axs[ivar].set_xscale('log')
-            axs[ivar].set_yscale('log')
+            if 'onset' in var_name or 'frac' in var_name:
+                axs[ivar].set_yscale('linear')
+            else:
+                axs[ivar].set_yscale('log')
             # if ivar == 4 or ivar == 5:
             #     axs[ivar].set_ylim([1e-8, 1e-1])
 
         plt.savefig(f"{plot_dir}{sim_config_str}_{block_name}.pdf")
+
+    # --- Summary plot in transformed space ---
+    # Mirrors ppe_summary_cm1.py's eff0 logic: asinh(y/eff0)*eff0 then standard
+    # scaler if eff0 is finite; plain standard scaler if eff0 is NaN. The
+    # scaler is fit on the PPE training data only, then applied to tgt too.
+    from sklearn.preprocessing import StandardScaler
+    smooth_linlog = lambda y, e0: e0 * np.arcsinh(y / e0)
+
+    def _eff0_for(ivar, ppe_pos_vals):
+        """Match ppe_summary_cm1.py thresholds_eff0 logic."""
+        if 'V_M' in ivar:
+            return 0.1
+        if 'prate' in ivar:
+            return 1e-4
+        if 'precip_frac' in ivar:
+            return 0.01
+        if 'onset' in ivar or 'M3_' in ivar:
+            return np.nan  # plain standard scaler, no asinh
+        finite = ppe_pos_vals[np.isfinite(ppe_pos_vals)]
+        return np.nanpercentile(finite, 10) if finite.size else 1.0
+
+    fig, axs = plt.subplots(4, 4, figsize=(12, 12), sharex=True)
+    axs = axs.flatten()
+    for ivar, var_name in enumerate(var_interest_blk1):
+        tgt_data = []
+        train_data = []
+        na_train = []
+        for initcond_combo in itertools.product(*vars_strs):
+            ic_str = "".join(initcond_combo)
+            if l_pert:
+                ic_data = []
+                for ipert in target_pert_idx:
+                    if ipert['global_id'] in nc_dict[target_sim_config][target_mp][ic_str]:
+                        ic_data.append(nc_dict[target_sim_config][target_mp][ic_str][ipert['global_id']][var_name]['value'])
+                if ic_data:
+                    tgt_data.append(ic_data)
+            else:
+                tgt_data.append(nc_dict[target_sim_config][target_mp][ic_str][var_name]['value'])
+        for ippe in ppe_idx:
+            sc = ippe['sim_config']
+            if ippe['global_id'] in nc_dict[sc][train_mp]['cic']:
+                train_data.append(nc_dict[sc][train_mp]['cic'][ippe['global_id']][var_name]['value'])
+                na_train.append(nc_dict[sc][train_mp]['cic'][ippe['global_id']]['na'])
+
+        tgt_data = np.array(tgt_data)
+        expected_ndim = 2 if l_pert else 1
+        if tgt_data.ndim > expected_ndim:
+            tgt_data = np.mean(tgt_data, axis=tuple(range(expected_ndim, tgt_data.ndim)))
+        train_data = np.array(train_data, dtype=float)
+        na_train = np.array(na_train)
+
+        # Compute eff0 from POSITIVE PPE values (matches ppe_summary_cm1.py)
+        ppe_pos = train_data[train_data > 0]
+        eff0 = _eff0_for(var_name, ppe_pos)
+        use_asinh = np.isfinite(eff0)
+
+        def transform(y):
+            y = np.asarray(y, dtype=float)
+            return smooth_linlog(y, eff0) if use_asinh else y
+
+        # Fit standard scaler on PPE (transformed); apply to both
+        ppe_t = transform(train_data).reshape(-1, 1)
+        scaler = StandardScaler().fit(ppe_t)
+        train_scaled = scaler.transform(ppe_t).ravel()
+        tgt_scaled = scaler.transform(transform(tgt_data).reshape(-1, 1)).reshape(tgt_data.shape)
+
+        if l_pert:
+            mean_tgt = np.mean(tgt_scaled, axis=1)
+            min_tgt = np.min(tgt_scaled, axis=1)
+            max_tgt = np.max(tgt_scaled, axis=1)
+            axs[ivar].plot(na, mean_tgt, label=ic_str, linewidth=2, marker='o', alpha=0.5, color='tab:orange')
+            axs[ivar].fill_between(na, min_tgt, max_tgt, alpha=0.3, color='tab:orange')
+        else:
+            axs[ivar].plot(na, tgt_scaled, label=ic_str, linewidth=2, marker='o', alpha=0.5, color='tab:orange')
+
+        if len(train_scaled) > 0:
+            axs[ivar].scatter(na_train, train_scaled, label='Train PPE', s=5, color='tab:blue')
+
+        label_t = f'asinh@eff0={eff0:.2e}' if use_asinh else 'standard only'
+        axs[ivar].set_title(f"{cl.output_var_set[var_name]['longname']}\n[{label_t}]", fontsize=9)
+        axs[ivar].set_xscale('log')
+        axs[ivar].set_yscale('linear')  # already standardized
+        axs[ivar].axhline(0, color='k', lw=0.6, alpha=0.4)
+        axs[ivar].set_ylabel('standardized')
+
+    plt.tight_layout()
+    plt.savefig(f"{plot_dir}{sim_config_str}_summary_transformed.pdf")
 
 
 if __name__ == '__main__':
