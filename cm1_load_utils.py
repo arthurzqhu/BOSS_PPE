@@ -144,7 +144,7 @@ output_var_set = {
                   'M6_curtain_mean': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
                   'M9_curtain_mean': {'var_source': 'qc9', 'var_unit': '$m^9$/kg', 'scale': 1e-4**9, 'longname': 'M9'},
                   'M0_path_ss': {'var_source': 'qc0', 'var_unit': '1/$m^2$', 'longname': 'SS LNP'}, 
-                  'M3_path_ss': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'SS LWC'}, 
+                  'M3_path_ss': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'SS LWP'}, 
                   'M4_path_ss': {'var_source': 'qc4', 'var_unit': '$m^4$/$m^2$', 'scale': 1e-4**4, 'longname': 'SS M4'},
                   'M5_path_ss': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'SS M5'},
                   'M6_path_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'SS M6'},
