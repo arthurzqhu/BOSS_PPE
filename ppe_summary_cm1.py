@@ -57,7 +57,7 @@ def main(camp='dycoms'):
     n_test = n_workers
 
     ppe_basename = [
-                    'fullmp_dycoms_offpolicy_r2_clip_freeparam_lhs',
+                    'fullmp_dycoms_offpolicy_r5_bky_lhs',
                     ]
 
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
@@ -501,6 +501,10 @@ def main(camp='dycoms'):
             global_attrs['thresholds_eff0'].append(0.1)
         elif 'prate' in ivar:
             global_attrs['thresholds_eff0'].append(1e-4)
+        elif 'precip_frac' in ivar:
+            global_attrs['thresholds_eff0'].append(0.01)
+        elif 'onset' in ivar or 'M3_' in ivar:
+            global_attrs['thresholds_eff0'].append(np.nan)
         else:
             global_attrs['thresholds_eff0'].append(np.nanpercentile(value_greater_0, 10))
     
@@ -594,10 +598,23 @@ def create_nc_variables_structure(nc_dict, vars_vn, var_interest, l_pert):
     
     return ncvars
 
+_PPE_FLAG_RE = re.compile(r'^\s*l_ppe_(\w+)\s*=\s*\.(true|false)\.', re.I | re.M)
+
+def _unperturbed_params(member_dir):
+    """Return the set of base-param names whose `l_ppe_<name>` flag is .false.
+    in {member_dir}/CM1.nml. These rows in params.csv carry placeholder values
+    and should be dropped from the perturbation summary."""
+    nml_path = os.path.join(member_dir, 'CM1.nml')
+    if not os.path.exists(nml_path):
+        return set()
+    with open(nml_path) as f:
+        text = f.read()
+    return {name for name, val in _PPE_FLAG_RE.findall(text) if val.lower() == 'false'}
+
 def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, datedir, sim_configs, train_mp):
     """Load PPE data with memory cleanup"""
     ic_str = 'cic'
-    
+
     # Load PPE parameters
     for i, ppe_item in enumerate(tqdm(ppe_idx, desc='loading params')):
         # Check if ppe_item is dict or legacy
@@ -611,8 +628,24 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, date
             global_id = int(member) if member.isdigit() else i
 
         # Construct path using the correct config
-        param_df = pd.read_csv(f"{cl.output_dir}{datedir}/{current_config}/{train_mp}/{member}/params.csv")
-        
+        member_dir = f"{cl.output_dir}{datedir}/{current_config}/{train_mp}/{member}"
+        param_df = pd.read_csv(f"{member_dir}/params.csv")
+
+        # Drop rows for params whose l_ppe_<name> flag is .false. in CM1.nml.
+        # Those rows hold placeholder values (no real perturbation), so including
+        # them would pollute params_PPE with a constant column.
+        unperturbed = _unperturbed_params(member_dir)
+        if unperturbed:
+            if param_df.shape[0] > param_df.shape[1]:  # vertical layout
+                names_col = param_df.columns[0]
+                mask = ~param_df[names_col].isin(unperturbed)
+                param_df = param_df.loc[mask].reset_index(drop=True)
+            else:  # horizontal layout: param names are column headers
+                cols_to_drop = [c for c in param_df.columns if c.strip() in unperturbed]
+                if cols_to_drop:
+                    param_df = param_df.drop(columns=cols_to_drop)
+
+
         if i == 0:  # First iteration
             # nparams = nc_dict['n_param_nevp'] + nc_dict['n_param_condevp'] + \
             #           nc_dict['n_param_coal'] + nc_dict['n_param_sed']
