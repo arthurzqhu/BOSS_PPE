@@ -219,6 +219,59 @@ output_var_set = {
                   'sedflux_m3': {'var_source': 'sedflux_M3', 'var_unit': 'mm/hr', 'scale': M3toQ*3600, 'longname': 'Rain flux'},
                   'sedflux_m4': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Sedflux M4'},
                   'sedflux_m6': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Sedflux M6'},
+                  # domain-mean evap rate profiles (time, z)
+                  'evap_M0_dmprof': {'var_source': 'evap_M0', 'var_unit': '1/kg/s', 'longname': 'DM Evap M0'},
+                  'evap_M3_dmprof': {'var_source': 'evap_M3', 'var_unit': 'kg/kg/s', 'scale': M3toQ, 'longname': 'DM Evap M3',
+                                    'fallback_var_source': 'condevapqr', 'fallback_scale': 1.0},
+                  'evap_M4_dmprof': {'var_source': 'evap_M4', 'var_unit': '$m^4$/kg/s', 'scale': 1e-4**4, 'longname': 'DM Evap M4'},
+                  'evap_M6_dmprof': {'var_source': 'evap_M6', 'var_unit': '$m^6$/kg/s', 'scale': 1e-4**6, 'longname': 'DM Evap M6'},
+                  # domain-mean advection tendency profiles (time, z)
+                  'adv_M0_dmprof': {'var_source': 'adv_M0', 'var_unit': '1/kg/s', 'longname': 'DM Adv M0'},
+                  'adv_M3_dmprof': {'var_source': 'adv_M3', 'var_unit': 'kg/kg/s', 'scale': M3toQ, 'longname': 'DM Adv M3'},
+                  'adv_M4_dmprof': {'var_source': 'adv_M4', 'var_unit': '$m^4$/kg/s', 'scale': 1e-4**4, 'longname': 'DM Adv M4'},
+                  'adv_M6_dmprof': {'var_source': 'adv_M6', 'var_unit': '$m^6$/kg/s', 'scale': 1e-4**6, 'longname': 'DM Adv M6'},
+                  # domain-mean sed flux profiles (time, z)
+                  'sedflux_M0_dmprof': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'DM Sedflux M0'},
+                  'sedflux_M3_dmprof': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'DM Sedflux M3'},
+                  'sedflux_M4_dmprof': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'DM Sedflux M4'},
+                  'sedflux_M6_dmprof': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'DM Sedflux M6'},
+                  # domain-mean fall speed profiles (time, z); m/s, no scale
+                  'vfall_M0_dmprof': {'var_source': 'vfall_M0', 'var_unit': 'm/s', 'longname': 'DM Vfall M0'},
+                  'vfall_M3_dmprof': {'var_source': 'vfall_M3', 'var_unit': 'm/s', 'longname': 'DM Vfall M3'},
+                  'vfall_M4_dmprof': {'var_source': 'vfall_M4', 'var_unit': 'm/s', 'longname': 'DM Vfall M4'},
+                  'vfall_M6_dmprof': {'var_source': 'vfall_M6', 'var_unit': 'm/s', 'longname': 'DM Vfall M6'},
+                  # per-cell mean drop diameter profiles (time, z); all in microns
+                  # D_03 = (M3/M0)^(1/3), D_34 = M4/M3, D_36 = (M6/M3)^(1/3), D_06 = (M6/M0)^(1/6)
+                  'meanD_03_dmprof': {'var_source': ['qc0', 'qc3'],        'var_unit': '$\\mu$m', 'longname': 'DM Mean Diam (M0,M3)'},
+                  'meanD_34_dmprof': {'var_source': ['qc3', 'qc4'],        'var_unit': '$\\mu$m', 'longname': 'DM Mean Diam (M3,M4)'},
+                  'meanD_36_dmprof': {'var_source': ['qc3', 'qc6'],        'var_unit': '$\\mu$m', 'longname': 'DM Mean Diam (M3,M6)'},
+                  'meanD_06_dmprof': {'var_source': ['qc0', 'qc6'],        'var_unit': '$\\mu$m', 'longname': 'DM Mean Diam (M0,M6)'},
+                  # last-timestep curtain (z, x), y-averaged. Stored as 2D arrays.
+                  'M0_curtainlast': {'var_source': 'qc0', 'var_unit': '1/kg', 'longname': 'LNC'},
+                  'M3_curtainlast': {'var_source': 'qc3', 'var_unit': 'kg/kg', 'scale': M3toQ, 'longname': 'LWC'},
+                  'M4_curtainlast': {'var_source': 'qc4', 'var_unit': '$m^4$/kg', 'scale': 1e-4**4, 'longname': 'M4'},
+                  'M6_curtainlast': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'M6'},
+                  'adv_M0_curtainlast': {'var_source': 'adv_M0', 'var_unit': '1/kg/s', 'longname': 'Adv M0'},
+                  'adv_M3_curtainlast': {'var_source': 'adv_M3', 'var_unit': 'kg/kg/s', 'scale': M3toQ, 'longname': 'Adv M3'},
+                  'adv_M4_curtainlast': {'var_source': 'adv_M4', 'var_unit': '$m^4$/kg/s', 'scale': 1e-4**4, 'longname': 'Adv M4'},
+                  'adv_M6_curtainlast': {'var_source': 'adv_M6', 'var_unit': '$m^6$/kg/s', 'scale': 1e-4**6, 'longname': 'Adv M6'},
+                  'evap_M0_curtainlast': {'var_source': 'evap_M0', 'var_unit': '1/kg/s', 'longname': 'Evap M0'},
+                  'evap_M3_curtainlast': {'var_source': 'evap_M3', 'var_unit': 'kg/kg/s', 'scale': M3toQ, 'longname': 'Evap M3',
+                                         'fallback_var_source': 'condevapqr', 'fallback_scale': 1.0},
+                  'evap_M4_curtainlast': {'var_source': 'evap_M4', 'var_unit': '$m^4$/kg/s', 'scale': 1e-4**4, 'longname': 'Evap M4'},
+                  'evap_M6_curtainlast': {'var_source': 'evap_M6', 'var_unit': '$m^6$/kg/s', 'scale': 1e-4**6, 'longname': 'Evap M6'},
+                  'sedflux_M0_curtainlast': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Sedflux M0'},
+                  'sedflux_M3_curtainlast': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'Sedflux M3'},
+                  'sedflux_M4_curtainlast': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Sedflux M4'},
+                  'sedflux_M6_curtainlast': {'var_source': 'sedflux_M6', 'var_unit': '$m^6$/$m^2$/s', 'scale': 1e-4**6, 'longname': 'Sedflux M6'},
+                  'vfall_M0_curtainlast': {'var_source': 'vfall_M0', 'var_unit': 'm/s', 'longname': 'Vfall M0'},
+                  'vfall_M3_curtainlast': {'var_source': 'vfall_M3', 'var_unit': 'm/s', 'longname': 'Vfall M3'},
+                  'vfall_M4_curtainlast': {'var_source': 'vfall_M4', 'var_unit': 'm/s', 'longname': 'Vfall M4'},
+                  'vfall_M6_curtainlast': {'var_source': 'vfall_M6', 'var_unit': 'm/s', 'longname': 'Vfall M6'},
+                  'meanD_03_curtainlast': {'var_source': ['qc0', 'qc3'], 'var_unit': '$\\mu$m', 'longname': 'Mean Diam (M0,M3)'},
+                  'meanD_34_curtainlast': {'var_source': ['qc3', 'qc4'], 'var_unit': '$\\mu$m', 'longname': 'Mean Diam (M3,M4)'},
+                  'meanD_36_curtainlast': {'var_source': ['qc3', 'qc6'], 'var_unit': '$\\mu$m', 'longname': 'Mean Diam (M3,M6)'},
+                  'meanD_06_curtainlast': {'var_source': ['qc0', 'qc6'], 'var_unit': '$\\mu$m', 'longname': 'Mean Diam (M0,M6)'},
                   'sfM0_ss': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'SS Sedflux M0'},
                   'sfM3_ss': {'var_source': 'sedflux_M3', 'var_unit': 'kg/$m^2$/s', 'scale': M3toQ, 'longname': 'SS Sedflux M3'},
                   'sfM4_ss': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'SS Sedflux M4'},
@@ -562,6 +615,51 @@ def load_cm1_attrs(file_info, nc_dict, ipert=0, continuous_ic=True):
     
     return nc_dict
 
+def _is_full_timeseries_var(var_name, meta):
+    """True for time-resolved profile/path variables that cm1_viz plots against
+    the full simulation time (e.g. *_dmprof, *_dmpath, prate_dm). These benefit
+    from backfilling the pre-steady-state window so the time series isn't blank
+    during spin-up. SS means, curtains, onset, and percentile diagnostics are
+    excluded — they are intentionally restricted to the steady-state window.
+    """
+    if var_name in ('v_precip_onset', 't_precip_onset'):
+        return False
+    if meta['is_ss'] or meta['is_prc']:
+        return False
+    if 'curtainlast' in var_name or '_curtain' in var_name:
+        return False
+    if any(k in var_name for k in ('KY036', 'KY346', 'KX_')):
+        return False
+    return True
+
+def _load_early_timeseries(early_paths, full_ts_vars, var_meta, dz, z, dx, lwp_threshold):
+    """Extract the pre-steady-state portion of time-resolved variables so the
+    full time series can be reconstructed. Returns {vn: [slice or None, ...]}
+    with one entry per early file (in time order); corrupt/unreadable files
+    yield None placeholders so leading-axis time alignment is preserved.
+    """
+    early = {vn: [] for vn in full_ts_vars}
+    for fp in early_paths:
+        try:
+            ds = nc.Dataset(fp, 'r')
+        except OSError:
+            print(f"[_load_early_timeseries] skipping corrupt file: {fp}")
+            for vn in full_ts_vars:
+                early[vn].append(None)
+            continue
+        try:
+            rho = calc_rho(ds)
+            lwp = calc_lwp(ds, dz, rho=rho)
+            for vn in full_ts_vars:
+                try:
+                    val = extract_and_reduce(vn, ds, rho, lwp, dz, z, dx, lwp_threshold)
+                    early[vn].append(aggregate_timeseries(vn, [val], var_meta[vn]))
+                except Exception:
+                    early[vn].append(None)
+        finally:
+            ds.close()
+    return early
+
 def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, ipert=0, lwp_threshold=0.02, pbar=None):
     if nc_dict is None:
         nc_dict = {}
@@ -706,9 +804,15 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
                 if vn in ('v_precip_onset', 't_precip_onset'):
                     continue
                 # Every file in files_to_use is within the SS window,
-                # so unconditionally extract.
-                val = extract_and_reduce(vn, ds, rho, lwp, dz, z, dx, lwp_threshold)
-                raw_collector[vn].append(val)
+                # so unconditionally extract. KeyError means the source variable
+                # is absent from this MP scheme's output (e.g. 2CAT-BOSS doesn't
+                # output evap_M*/vfall_M*); store None so aggregate_timeseries
+                # returns NaN for those variables.
+                try:
+                    val = extract_and_reduce(vn, ds, rho, lwp, dz, z, dx, lwp_threshold)
+                    raw_collector[vn].append(val)
+                except KeyError:
+                    raw_collector[vn].append(None)
 
     if pbar is not None:
         mean_pct = np.mean(lwp_pcts)
@@ -719,6 +823,22 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     # leading NaN so their leading axis matches len(file_paths) — the same
     # length as nc_dict[fsim_config]['time'] — which is what cm1_viz expects.
     n_skip = len(file_paths) - len(files_to_use)
+
+    # Optionally backfill the early (pre-SS-window) portion of time-resolved
+    # profile/path variables so cm1_viz time series cover the full simulation
+    # instead of being NaN during spin-up. Gated behind 'full_timeseries' so
+    # callers that only want SS diagnostics (e.g. ppe_summary_cm1) don't pay the
+    # extra early-file reads. SS means, curtains, onset, and percentiles are
+    # unaffected — they still use the SS window only.
+    full_ts_early = {}
+    if file_info.get('full_timeseries', False) and n_skip > 0:
+        full_ts_vars = [vn for vn in var_interest
+                        if vn not in ('v_precip_onset', 't_precip_onset')
+                        and _is_full_timeseries_var(vn, var_meta[vn])]
+        if full_ts_vars:
+            full_ts_early = _load_early_timeseries(
+                file_paths[:n_skip], full_ts_vars, var_meta, dz, z, dx, lwp_threshold
+            )
 
     # Final aggregation and assignment
     for vn in var_interest:
@@ -732,13 +852,25 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
             dst[vn]['value'] = (1.0 / t_onset_hr) if (np.isfinite(t_onset_hr) and t_onset_hr > 0) else 0.0
         else:
             val = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
-            # Pad time-axis-leading arrays so they align with full-sim `time`
+            # Align time-axis-leading arrays with full-sim `time`: backfill the
+            # early window with real data when available (full_timeseries mode),
+            # otherwise pad with leading NaN as before.
             if (n_skip > 0
                     and isinstance(val, np.ndarray)
                     and val.ndim >= 1
                     and val.shape[0] == len(files_to_use)):
-                pad_shape = (n_skip,) + val.shape[1:]
-                val = np.concatenate([np.full(pad_shape, np.nan), val], axis=0)
+                tail = val.shape[1:]
+                early_slices = full_ts_early.get(vn)
+                if early_slices:
+                    early_arr = np.stack([
+                        np.asarray(s, dtype=float) if s is not None
+                        else np.full(tail, np.nan)
+                        for s in early_slices
+                    ], axis=0)
+                    val = np.concatenate([early_arr, val], axis=0)
+                else:
+                    pad_shape = (n_skip,) + tail
+                    val = np.concatenate([np.full(pad_shape, np.nan), val], axis=0)
             dst[vn]['value'] = val
         dst[vn]['units'] = output_var_set[vn]['var_unit']
 
@@ -763,7 +895,21 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
     vsource = output_var_set[var_name]['var_source']
     scale = output_var_set[var_name].get('scale', 1.0)
     lwc_thresh = output_var_set[var_name].get('lwc_threshold')
-    
+
+    # Raise KeyError early if any source variable is absent from this file
+    # (allows callers to silently skip variables not produced by this MP scheme).
+    # If a fallback_var_source is defined in output_var_set, try that first before raising.
+    _sources = vsource if isinstance(vsource, list) else ([vsource] if vsource else [])
+    _missing = [s for s in _sources if s not in ds.variables]
+    if _missing:
+        _fb_src = output_var_set[var_name].get('fallback_var_source')
+        _fb_scl = output_var_set[var_name].get('fallback_scale', scale)
+        if _fb_src and _fb_src in ds.variables:
+            vsource = _fb_src
+            scale = _fb_scl
+        else:
+            raise KeyError(f"{var_name}: source variable(s) not in file: {_missing}")
+
     def get_masked_data(vn):
         data = ds.variables[vn][...]
         if lwc_thresh is not None:
@@ -790,7 +936,38 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         # Reduction
-        if 'prof' in var_name:
+        if 'meanD_' in var_name and ('dmprof' in var_name or 'curtainlast' in var_name):
+            # per-cell mean drop diameter (microns) from a moment pair.
+            # qc3 is m^3/kg natively; qc4, qc6 are stored in mxscale/myscale.
+            if '_03_' in var_name:
+                m0, m3 = data
+                m0s = np.where(np.isfinite(m0) & (m0 > 0), m0, np.nan)
+                m3s = np.where(np.isfinite(m3) & (m3 > 0), m3, np.nan)
+                d_m = (m3s / m0s) ** (1.0 / 3.0)
+            elif '_34_' in var_name:
+                m3, m4 = data
+                m3s = np.where(np.isfinite(m3) & (m3 > 0), m3, np.nan)
+                m4_phys = np.where(np.isfinite(m4) & (m4 > 0), m4, np.nan) * (1e-4 ** 4)
+                d_m = m4_phys / m3s
+            elif '_36_' in var_name:
+                m3, m6 = data
+                m3s = np.where(np.isfinite(m3) & (m3 > 0), m3, np.nan)
+                m6_phys = np.where(np.isfinite(m6) & (m6 > 0), m6, np.nan) * (1e-4 ** 6)
+                d_m = (m6_phys / m3s) ** (1.0 / 3.0)
+            elif '_06_' in var_name:
+                m0, m6 = data
+                m0s = np.where(np.isfinite(m0) & (m0 > 0), m0, np.nan)
+                m6_phys = np.where(np.isfinite(m6) & (m6 > 0), m6, np.nan) * (1e-4 ** 6)
+                d_m = (m6_phys / m0s) ** (1.0 / 6.0)
+            else:
+                raise ValueError(f"unknown meanD variant: {var_name}")
+            res = d_m * 1e6  # m -> micron
+        elif 'curtainlast' in var_name:
+            # keep full (1, z, y, x); aggregator picks last time and means over y.
+            # Use raw (unmasked) field so curtain visualizations show the full
+            # spatial structure, not just above-LWP-threshold columns.
+            res = raw_data * scale
+        elif 'prof' in var_name:
             res = data * scale
         elif 'path' in var_name:
             dz_b = dz[None, :, None, None]
@@ -818,10 +995,12 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
             h_idx = np.argmin(np.abs(z - target_h))
             res = data[:, h_idx, :, :] * scale
         elif '_curtain_mean' in var_name:
-            res = np.nanmean(data, axis=(0, 2)) * scale
+            # raw (unmasked): curtain visualizations show full field, not just
+            # above-threshold columns
+            res = np.nanmean(raw_data, axis=(0, 2)) * scale
         elif '_curtain_slice' in var_name:
-            yidx = data.shape[2] // 2
-            res = data[0, :, yidx, :] * scale
+            yidx = raw_data.shape[2] // 2
+            res = raw_data[0, :, yidx, :] * scale
         # elif 'prate_dm' in var_name or 'precip_max_dm' in var_name:
         #     res = np.nanmean(data) * scale
         elif 'tempK' in var_name:
@@ -945,6 +1124,7 @@ def get_spatial_autocorrelation(lwp_field, dx):
     return lags[:max_lag_idx], radial_R[:max_lag_idx]
 
 def aggregate_timeseries(var_name, ts, meta):
+    ts = [x for x in ts if x is not None]
     if not ts: return np.nan
     
     with warnings.catch_warnings():
@@ -960,9 +1140,15 @@ def aggregate_timeseries(var_name, ts, meta):
             # Each timestep already returned a scalar (mean or 99th pct); just average over ss timesteps
             return np.nanmean(ts)
 
-        # Force a writeable float64 copy: netCDF/masked-array views can be read-only,
-        # which breaks numpy 2.x's in-place nanmean/_divide_by_count.
-        arr = np.array(np.squeeze(np.stack(ts)), dtype=np.float64)
+        if 'curtainlast' in var_name:
+            # ts[-1] is (1, z, y, x); take last timestep, mean over y, leave (z, x)
+            last = np.asarray(ts[-1])
+            if last.ndim == 4:
+                last = last[0]
+            # last is now (z, y, x); mean over y axis
+            return np.nanmean(last, axis=1)
+
+        arr = np.squeeze(np.stack(ts))
 
 
         if meta['is_ds']:

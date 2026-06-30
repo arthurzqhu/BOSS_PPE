@@ -37,7 +37,7 @@ def main(camp='dycoms'):
     lwp_threshold = 0.02
 
     ppe_basename = [
-                    'fullmp_dycoms_offpolicy_r5_bky_lhs',
+                    'fullmp_dycoms_offpolicy_r6_fixclouddz_Nd_pilot_lhs',
                     ]
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
     # sim_config_str is used for joblib paths, plot dirs, and saved-file names
@@ -47,7 +47,7 @@ def main(camp='dycoms'):
         target_sim_config = f'NCE_{camp}_tgt'
         l_pert = False
     else:
-        target_sim_config = f'fullmp_{camp}_tgt_pert_oldcoalkernel'
+        target_sim_config = f'fullmp_{camp}_tgt_pert'
         l_pert = True
 
     if camp == 'rico':
@@ -157,8 +157,8 @@ def main(camp='dycoms'):
             print(f"Missing variables in train data: {vars_to_load}. Loading missing ones...")
         else:
             print(f"Train data not found or being fully reloaded at {train_jl_path}")
-        dask_scratch = os.path.join(os.environ.get('PSCRATCH', '~/tmp'), 'dask-scratch-space')
-        client = Client(n_workers=n_workers, threads_per_worker=1, processes=True, local_directory=dask_scratch)
+        dask_scratch = os.path.join(os.environ.get('PSCRATCH', '/home/arthurhu/tmp'), 'dask-scratch-space')
+        client = Client(n_workers=32, threads_per_worker=1, processes=True, local_directory=dask_scratch)
         print(f"Dask dashboard available at: {client.dashboard_link}")
         print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
         tasks = []
@@ -401,7 +401,7 @@ def main(camp='dycoms'):
             # if ivar == 4 or ivar == 5:
             #     axs[ivar].set_ylim([1e-8, 1e-1])
 
-        plt.savefig(f"{plot_dir}{sim_config_str}_{block_name}.pdf")
+        plt.savefig(f"{plot_dir}{sim_config_str}_{block_name}.png")
 
     # --- Summary plot in transformed space ---
     # Mirrors ppe_summary_cm1.py's eff0 logic: asinh(y/eff0)*eff0 then standard

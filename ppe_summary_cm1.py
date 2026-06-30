@@ -180,7 +180,7 @@ def main(camp='dycoms'):
     if l_parallel:
         # On compute nodes, use processes (True) for library isolation (NetCDF is often not thread-safe).
         # We limit workers to avoid memory/IO pressure on the Lustre filesystem.
-        dask_scratch = os.path.join(os.environ.get('PSCRATCH', '~/tmp'), 'dask-scratch-space')
+        dask_scratch = os.path.join(os.environ.get('PSCRATCH', '/home/arthurhu/tmp'), 'dask-scratch-space')
 
         # Using a reasonable number of workers (e.g., 16) even on a full compute node 
         # is usually safer and faster for I/O bound NetCDF tasks.

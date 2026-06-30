@@ -70,8 +70,21 @@ else:
 sim_config = _a.sim_config if _a.sim_config is not None else f'fullmp_{camp}_test_resol'
 # sim_configs = [simr2_config]
 l_pert = True
-lwp_threshold = 0
-ss_hr = 2
+lwp_threshold = 0.02
+
+
+if camp == 'rico':
+    steady_state_hrs = 5
+    min_files = 33
+    onset_skip_hrs = 1.5
+elif camp == 'dycoms':
+    steady_state_hrs = 2
+    min_files = 25
+    onset_skip_hrs = 0.5
+else:
+    min_files = None
+    onset_skip_hrs = 0.0
+
 # target_sim_config = _a.target_sim_config if _a.target_sim_config is not None else f'NCE_{camp}_tgt'
 target_sim_config = _a.target_sim_config if _a.target_sim_config is not None else f'fullmp_{camp}_tgt_NewCoalKernel_pert'
 
@@ -83,11 +96,19 @@ if not os.path.exists(plot_dir):
 
 n_init = 1
 target_mp = 'BIN-TAU'
-train_mp = 'SLC-BOSS'
-ref_mps = ['2CAT-BOSS']
-# ref_mps = ['2CAT-BOSS', '2CAT-KK2000', '2CAT-SB2001']
 mconfigs = os.listdir(cl.output_dir + nikki)
 vars_strs, vars_vn = lp.get_dics(cl.output_dir, nikki, sim_config, n_init)
+# Auto-detect train MP(s) from the first Na subdirectory under sim_config
+_first_na = vars_strs[0][0]
+_mp_search_dir = os.path.join(cl.output_dir, nikki, sim_config, _first_na)
+if os.path.isdir(_mp_search_dir):
+    train_mps = sorted(d for d in os.listdir(_mp_search_dir)
+                       if os.path.isdir(os.path.join(_mp_search_dir, d)) and d != target_mp)
+else:
+    train_mps = []
+if not train_mps:
+    train_mps = ['SLC-BOSS']
+train_mp = train_mps[0]
 var_interest = ['M0_dmpath', 'M3_dmpath', 'M4_dmpath', 'M6_dmpath', 'prate_dm',
                 'M0_dmprof', 'M3_dmprof', 'M4_dmprof', 'M6_dmprof',
                 # 'adv_M0_dmprof', 'adv_M3_dmprof', 'adv_M4_dmprof', 'adv_M6_dmprof',
@@ -120,6 +141,8 @@ train_file_info = {'dir': cl.output_dir,
                    'l_pert': False,
                    'sim_config': sim_config,
                    'mp_config': train_mp,
+                   'onset_skip_hrs': onset_skip_hrs,
+                   'full_timeseries': True,
                   }
 
 tgt_file_info = {'dir': cl.output_dir,
@@ -128,6 +151,8 @@ tgt_file_info = {'dir': cl.output_dir,
                  'l_pert': l_pert,
                  'sim_config': target_sim_config,
                  'mp_config': target_mp,
+                 'onset_skip_hrs': onset_skip_hrs,
+                 'full_timeseries': True,
                 }
 
 if 'nc_dict' not in globals():
@@ -141,19 +166,20 @@ if 'nc_dict' not in globals():
 
 for initcond_combo in tqdm(itertools.product(*[vars_strs[0]])):
     train_file_info.update({'vars_str': initcond_combo})
-    for sim_config in sim_configs:
-        train_file_info.update({'sim_config': sim_config})
-        cl.load_cm1(train_file_info, var_interest, ss_hr, nc_dict, False, lwp_threshold=lwp_threshold)
+    for _sc in sim_configs:
+        for _tmp in train_mps:
+            train_file_info.update({'sim_config': _sc, 'mp_config': _tmp})
+            cl.load_cm1(train_file_info, var_interest, steady_state_hrs, nc_dict, False, lwp_threshold=lwp_threshold)
     # for ref_mp in ref_mps:
     #     train_file_info_2cat = train_file_info.copy()
     #     train_file_info_2cat.update({'sim_config': sim2cat_config, 'mp_config': ref_mp})
-    #     cl.load_cm1(train_file_info_2cat, var_interest, ss_hr, nc_dict, False, lwp_threshold=lwp_threshold)
+    #     cl.load_cm1(train_file_info_2cat, var_interest, steady_state_hrs, nc_dict, False, lwp_threshold=lwp_threshold)
 
 
 # In[6]:
 
 
-tgt_jl_path = f"{cl.output_dir}/{target_nikki}/joblibs/{target_sim_config}.joblib"
+tgt_jl_path = f"{cl.output_dir}/{target_nikki}/joblibs/{target_sim_config}_lwpthres{round(lwp_threshold*1e3)}.joblib"
 vars_to_load = var_interest
 if os.path.exists(tgt_jl_path):
     print(f"Loading target data from {tgt_jl_path}")
@@ -177,15 +203,30 @@ if os.path.exists(tgt_jl_path):
             cl.load_cm1_attrs(finfo_target, nc_dict=nc_dict, continuous_ic=False)
         except Exception as e:
             print(f"Could not load target global attributes (no pert): {e}")
-    # Check if all variables exist
+    # Check if all variables exist. Scan EVERY ic / perturbation, not just the
+    # first one: a variable can be present in first_ic but missing in a later ic
+    # or pert, which previously slipped through and KeyError'd at plot time.
+    # Any variable missing from any ic/pert gets recomputed below and merged into
+    # the cached joblib (deep_merge preserves already-cached data).
     try:
-        first_ic = "".join(list(itertools.product(*vars_strs))[0])
-        if l_pert:
-            first_pert = list(nc_dict[target_sim_config][target_mp][first_ic].keys())[0]
-            existing_vars = nc_dict[target_sim_config][target_mp][first_ic][first_pert].keys()
-        else:
-            existing_vars = nc_dict[target_sim_config][target_mp][first_ic].keys()
-        vars_to_load = [v for v in var_interest if v not in existing_vars]
+        missing = set()
+        for initcond_combo in itertools.product(*vars_strs):
+            ic = "".join(initcond_combo)
+            try:
+                ic_dict = nc_dict[target_sim_config][target_mp][ic]
+            except KeyError:
+                missing.update(var_interest)  # whole ic absent
+                continue
+            if l_pert:
+                pert_keys = [k for k in ic_dict.keys() if isinstance(k, int)]
+                if not pert_keys:
+                    missing.update(var_interest)
+                for pk in pert_keys:
+                    missing.update(v for v in var_interest if v not in ic_dict[pk])
+            else:
+                missing.update(v for v in var_interest if v not in ic_dict)
+        # preserve var_interest ordering
+        vars_to_load = [v for v in var_interest if v in missing]
     except (KeyError, IndexError):
         vars_to_load = var_interest
 
@@ -208,13 +249,13 @@ if vars_to_load:
             target_pert_idx = cl.get_pert_idx(finfo_target)
             for ipert in target_pert_idx:
                 task = dask.delayed(cl.load_cm1)(
-                    finfo_target, vars_to_load, ss_hr, nc_dict=None, continuous_ic=False,
+                    finfo_target, vars_to_load, steady_state_hrs, nc_dict=None, continuous_ic=False,
                     ipert=ipert, lwp_threshold=lwp_threshold
                 )
                 tasks.append(task)
         else:
             task = dask.delayed(cl.load_cm1)(
-                finfo_target, vars_to_load, ss_hr, nc_dict=None, continuous_ic=False,
+                finfo_target, vars_to_load, steady_state_hrs, nc_dict=None, continuous_ic=False,
                 lwp_threshold=lwp_threshold
             )
             tasks.append(task)
@@ -240,14 +281,15 @@ else:
 
 
 time = nc_dict[sim_config]['time']/3600
-print(time.shape, time, sim_config)
 
-color_order = ['tab:blue', 'tab:orange']
-mp_markers = ['o', '*']
+_tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
+_n_total = len(train_mps) + 1
+color_order = _tab_colors[:_n_total]
+mp_markers = ['o'] * len(train_mps) + ['*']
 idx_to_plot = [0, 1]
-mp_labels = ['SLC-BOSS', 'BIN-TAU']
-line_styles = ['-', '-']
-line_widths = [2.5, 2.5]
+mp_labels = list(train_mps) + [target_mp]
+line_styles = ['-'] * _n_total
+line_widths = [2.5] * _n_total
 all_sim_configs = [sim_config, target_sim_config]
 
 # color_order = ['cornflowerblue', 'mediumblue', 'navy', 'tab:orange']
@@ -634,11 +676,11 @@ _plot_curtain_panel(['meanD_03_curtainlast', 'meanD_34_curtainlast', 'meanD_36_c
 
 
 time = nc_dict[target_sim_config]['time']/3600
-color_order = ['tab:blue', 'tab:orange']
-mps = ['SLC-BOSS', 'BIN-TAU']
+color_order = _tab_colors[:_n_total]
+mps = list(train_mps) + [target_mp]
 idx_to_plot = [0, 1]
-mp_labels = ['SLC-BOSS MAP', 'TAU']
-mp_markers = ['o', '*']
+mp_labels = list(train_mps) + [target_mp]
+mp_markers = ['o'] * len(train_mps) + ['*']
 x = nc_dict[target_sim_config]['x']
 z = nc_dict[target_sim_config]['z']*1e3
 plt.rc('font', size=16)
@@ -683,8 +725,11 @@ for ivar, varname in enumerate(var_na_sens):
             # axs[ivar].set_title(longname)
             axs[ivar].set_xlabel('$n_{aero}$ [$10^6$ kg$^{-1}$]')
             axs[ivar].set_title(f'{longname} [{units}]', fontsize=12)
-            axs[ivar].set_yscale('log')
             axs[ivar].set_xscale('log')
+            if 'onset' in varname or 'frac' in varname:
+                axs[ivar].set_yscale('linear')
+            else:
+                axs[ivar].set_yscale('log')
             axs[ivar].tick_params(axis='both', which='both', labelsize=12)
             i += 1
 
