@@ -199,6 +199,7 @@ output_var_set = {
                   'prate_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS Rain Rate'},
                   'prate_dm_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS DM Rain Rate'},
                   'prate_ds_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS DS Rain Rate'},
+                  'cloud_thickness_dm_ss': {'var_source': 'qc3', 'var_unit': 'm', 'longname': 'SS DM cloud thickness'},
                   'M6_99th_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'SS M6 99th percentile', 'lwc_threshold': 1e-5},
                   'M6_ds_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'SS M6 Standard Deviation', 'lwc_threshold': 1e-5},
                   # Numerical broadening diagnostics: KY(036) = M0*M6/M3^2 (dimensionless, >=1 by Cauchy-Schwarz)
@@ -723,7 +724,26 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
             dst.setdefault(vn, {})
             dst[vn]['value'] = np.nan
             dst[vn]['units'] = output_var_set[vn]['var_unit']
-        print(f"[load_cm1] {fsim_config}/{member}: only {len(file_paths)} files (<{min_files}); filling NaN.")
+        # NaN-fill perturbed BOSS params so downstream can detect the bad member.
+        # Read names from params.csv (still written at run init even if CM1 crashed).
+        try:
+            member_dir = os.path.dirname(file_paths[0])
+            params_csv = os.path.join(member_dir, 'params.csv')
+            if os.path.exists(params_csv):
+                pdf = pd.read_csv(params_csv)
+                if pdf.shape[0] > pdf.shape[1]:  # vertical layout: rows = params
+                    pnames = pdf.iloc[:, 0].astype(str).tolist()
+                else:                            # horizontal layout: cols = params
+                    pnames = [c.strip() for c in pdf.columns]
+                params_nan = {name: np.nan for name in pnames}
+            else:
+                params_nan = {}
+        except Exception as e:
+            print(f"[load_cm1] could not read params.csv for {fsim_config}/{member}: {e}")
+            params_nan = {}
+        dst_root = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
+        dst_root['params'] = params_nan
+        print(f"[load_cm1] {fsim_config}/{member}: only {len(file_paths)} files (<{min_files}); filling NaN (vars + params).")
         return nc_dict
 
     # Get dt from the LAST two files (always within the SS window).
@@ -1027,6 +1047,24 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
                 res = lags[idx]
         elif 'precip_frac' in var_name:
             res = np.mean(raw_data * scale > 1e-4) # mm/hr
+        elif 'cloud_thickness' in var_name:
+            # qc3 (3rd moment) is mass-equivalent after *M3toQ (kg/kg). In SLC everything
+            # is "cloud", so qc3 already includes rain/drizzle 3rd-moment contributions.
+            qc3_arr = ds.variables['qc3'][...]
+            qc_kgkg = np.asarray(qc3_arr) * M3toQ  # (1, nz, ny, nx)
+            cloud_mask = qc_kgkg > 1e-5
+            cm = cloud_mask[0]  # (nz, ny, nx)
+            # Cloud top / base indices per column
+            top_idx = cm.shape[0] - 1 - np.argmax(cm[::-1, :, :], axis=0)
+            base_idx = np.argmax(cm, axis=0)
+            thickness = (z[top_idx] - z[base_idx]).astype(np.float64)  # (ny, nx)
+            # Same column gate as other *_dm_ss vars
+            lwp_mask = lwp > lwp_threshold
+            rain_mask = ds.variables['prate'][0, ...] * 3600 > 1e-5
+            column_gate = lwp_mask | rain_mask
+            valid = column_gate & cm.any(axis=0)
+            thickness[~valid] = np.nan
+            res = thickness
         elif 'KY036' in var_name:
             m0, m3, m6_raw = data  # (ntime, nz, ny, nx) each; masked to NaN outside cloud
             m3_safe = np.where(m3 > 0, m3, np.nan)

@@ -57,7 +57,11 @@ def main(camp='dycoms'):
     n_test = n_workers
 
     ppe_basename = [
-                    'fullmp_dycoms_offpolicy_r5_bky_lhs',
+                    'fullmp_dycoms_2cat_base_arviz'
+                    # 'fullmp_dycoms_offpolicy_r6_sednewparam2_lhs',
+                    # 'fullmp_dycoms_offpolicy_r6_fixclouddz_lhs',
+                    # 'fullmp_dycoms_r7_pilot_lhs',
+                    # 'fullmp_dycoms_r7_extra_lhs',
                     ]
 
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
@@ -94,8 +98,29 @@ def main(camp='dycoms'):
     
     n_init = 1
     target_mp = 'BIN-TAU'
-    train_mp = 'SLC-BOSS'
     datedir = 'ppe'
+    # Auto-detect train_mp from the sim_config directory (mirrors cm1_viz.py).
+    # For multiple sim_configs they must share the same train_mp.
+    def _detect_train_mp(sc):
+        d = os.path.join(cl.output_dir, datedir, sc)
+        if not os.path.isdir(d):
+            return None
+        mps = sorted(x for x in os.listdir(d)
+                     if os.path.isdir(os.path.join(d, x)) and x != target_mp)
+        return mps[0] if mps else None
+    detected = {sc: _detect_train_mp(sc) for sc in sim_configs}
+    unique_mps = {m for m in detected.values() if m is not None}
+    if len(unique_mps) > 1:
+        raise ValueError(
+            f"sim_configs have inconsistent train_mp: {detected}. "
+            "All sim_configs in ppe_basename must share the same train_mp."
+        )
+    if not unique_mps:
+        print(f"[ppe_summary_cm1] warning: no train_mp directory found under {sim_configs}; defaulting to 'SLC-BOSS'")
+        train_mp = 'SLC-BOSS'
+    else:
+        train_mp = unique_mps.pop()
+        print(f"[ppe_summary_cm1] auto-detected train_mp = '{train_mp}'")
     target_datedir = 'target'
     # CSV listing parameters actually perturbed (first column = param names);
     # only used when sim_config_str ends with '_select'
@@ -117,8 +142,12 @@ def main(camp='dycoms'):
 
     if 'fullmp' in ppe_basename[0]:
         var_interest += [
-                     'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss', 'prate_dm_ss',
+                     'v_precip_onset', 'precip_frac_ss', 'prate_dm_ss', 'cloud_thickness_dm_ss',
                 ]
+
+    if 'SLC' not in train_mp:
+        var_interest[:] = [var for var in var_interest \
+                if 'M4' not in var and "M6" not in var]
 
 #     var_interest += [
 #             # 'sfM0_per5lvl', 'sfM3_per5lvl', 'sfM4_per5lvl', 'sfM6_per5lvl',
@@ -485,14 +514,16 @@ def main(camp='dycoms'):
         global_attrs['npert'] = dims['npert']
     else:
         global_attrs['npert'] = 1
-    global_attrs['n_param_nevp'] = nc_dict['n_param_nevp']
-    global_attrs['n_param_condevp'] = nc_dict['n_param_condevp']
-    global_attrs['n_param_coal'] = nc_dict['n_param_coal']
-    global_attrs['n_param_sed'] = nc_dict['n_param_sed']
-    global_attrs['is_perturbed_nevp'] = nc_dict['is_perturbed_nevp']
-    global_attrs['is_perturbed_condevp'] = nc_dict['is_perturbed_condevp']
-    global_attrs['is_perturbed_coal'] = nc_dict['is_perturbed_coal']
-    global_attrs['is_perturbed_sed'] = nc_dict['is_perturbed_sed']
+
+    if 'SLC-BOSS' in train_mp:
+        global_attrs['n_param_nevp'] = nc_dict['n_param_nevp']
+        global_attrs['n_param_condevp'] = nc_dict['n_param_condevp']
+        global_attrs['n_param_coal'] = nc_dict['n_param_coal']
+        global_attrs['n_param_sed'] = nc_dict['n_param_sed']
+        global_attrs['is_perturbed_nevp'] = nc_dict['is_perturbed_nevp']
+        global_attrs['is_perturbed_condevp'] = nc_dict['is_perturbed_condevp']
+        global_attrs['is_perturbed_coal'] = nc_dict['is_perturbed_coal']
+        global_attrs['is_perturbed_sed'] = nc_dict['is_perturbed_sed']
 
     # Calculate thresholds
     for ivar in var_interest:
@@ -503,7 +534,7 @@ def main(camp='dycoms'):
             global_attrs['thresholds_eff0'].append(1e-4)
         elif 'precip_frac' in ivar:
             global_attrs['thresholds_eff0'].append(0.01)
-        elif 'onset' in ivar or 'M3_' in ivar:
+        elif 'onset' in ivar or 'M3_' in ivar or 'cloud_thickness' in ivar:
             global_attrs['thresholds_eff0'].append(np.nan)
         else:
             global_attrs['thresholds_eff0'].append(np.nanpercentile(value_greater_0, 10))
@@ -644,6 +675,34 @@ def process_ppe_data(nc_dict, ppe_idx, vars_vn, var_interest, ncvars, dims, date
                 cols_to_drop = [c for c in param_df.columns if c.strip() in unperturbed]
                 if cols_to_drop:
                     param_df = param_df.drop(columns=cols_to_drop)
+
+        # Detect early-error member (< min_files cm1out files in load_cm1):
+        # signature is "all var_interest values are NaN". The 'params' key
+        # written by the new load_cm1 path is one signal, but cached joblibs
+        # from before that change won't have it — falling back to "all-NaN
+        # var_interest" catches both. If detected, NaN out the param values
+        # while preserving the param-name layout for downstream.
+        member_rec = nc_dict.get(current_config, {}).get(train_mp, {}).get(ic_str, {}).get(global_id, {})
+        is_bad = False
+        if isinstance(member_rec, dict):
+            if 'params' in member_rec:
+                is_bad = True
+            elif var_interest:
+                vals = []
+                for v in var_interest:
+                    entry = member_rec.get(v)
+                    if isinstance(entry, dict):
+                        vals.append(entry.get('value'))
+                if vals and all(
+                    (val is None) or (isinstance(val, float) and np.isnan(val))
+                    for val in vals
+                ):
+                    is_bad = True
+        if is_bad:
+            if param_df.shape[0] > param_df.shape[1]:  # vertical
+                param_df.iloc[:, 1] = np.nan
+            else:                                      # horizontal
+                param_df.iloc[:, :] = np.nan
 
 
         if i == 0:  # First iteration

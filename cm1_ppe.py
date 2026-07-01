@@ -37,7 +37,10 @@ def main(camp='dycoms'):
     lwp_threshold = 0.02
 
     ppe_basename = [
-                    'fullmp_dycoms_offpolicy_r6_fixclouddz_Nd_pilot_lhs',
+                    'fullmp_dycoms_offpolicy_r6_sednewparam2_lhs',
+                    'fullmp_dycoms_offpolicy_r6_fixclouddz_lhs',
+                    'fullmp_dycoms_r7_pilot_lhs',
+                    'fullmp_dycoms_r7_extra_lhs',
                     ]
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
     # sim_config_str is used for joblib paths, plot dirs, and saved-file names
@@ -47,7 +50,7 @@ def main(camp='dycoms'):
         target_sim_config = f'NCE_{camp}_tgt'
         l_pert = False
     else:
-        target_sim_config = f'fullmp_{camp}_tgt_pert'
+        target_sim_config = f'fullmp_{camp}_tgt_pert_oldcoalkernel'
         l_pert = True
 
     if camp == 'rico':
@@ -68,7 +71,28 @@ def main(camp='dycoms'):
 
     n_init = 1
     target_mp = 'BIN-TAU'
-    train_mp = 'SLC-BOSS'
+    # Auto-detect train_mp from the sim_config directory (mirrors cm1_viz.py).
+    # For multiple sim_configs they must share the same train_mp.
+    def _detect_train_mp(sc):
+        d = os.path.join(cl.output_dir, nikki, sc)
+        if not os.path.isdir(d):
+            return None
+        mps = sorted(x for x in os.listdir(d)
+                     if os.path.isdir(os.path.join(d, x)) and x != target_mp)
+        return mps[0] if mps else None
+    detected = {sc: _detect_train_mp(sc) for sc in sim_configs}
+    unique_mps = {m for m in detected.values() if m is not None}
+    if len(unique_mps) > 1:
+        raise ValueError(
+            f"sim_configs have inconsistent train_mp: {detected}. "
+            "All sim_configs in ppe_basename must share the same train_mp."
+        )
+    if not unique_mps:
+        print(f"[cm1_ppe] warning: no train_mp directory found under {sim_configs}; defaulting to 'SLC-BOSS'")
+        train_mp = 'SLC-BOSS'
+    else:
+        train_mp = unique_mps.pop()
+        print(f"[cm1_ppe] auto-detected train_mp = '{train_mp}'")
     mconfigs = os.listdir(cl.output_dir + nikki)
     vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
     var_interest = []
@@ -81,7 +105,7 @@ def main(camp='dycoms'):
     if 'fullmp' in ppe_basename[0]:
         var_interest += [
                          'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
-                         'prate_dm_ss', 'prate_ds_ss', 'KX_dm_ss', 'KY346_dm_ss',
+                         'prate_dm_ss', 'prate_ds_ss', 'cloud_thickness_dm_ss',
                          # 'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
                          # 'sfM0_dm_100m_ss', 'sfM3_dm_100m_ss', 'sfM4_dm_100m_ss', 'sfM6_dm_100m_ss',
                          # 'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
@@ -123,70 +147,97 @@ def main(camp='dycoms'):
     # load BOSS data — train_file_info['sim_config'] is a list; get_pert_idx returns
     # members with per-member 'sim_config' fields when given a list
     ppe_idx = cl.get_pert_idx(train_file_info)
-    # Joblib path is keyed by sim_config_str (last/canonical config, mirrors ppe_summary_cm1.py)
-    train_jl_path = f"{cl.output_dir}/{nikki}/joblibs/{sim_config_str}_lwpthres{round(lwp_threshold*1e3)}.joblib"
-    vars_to_load = var_interest
-    if os.path.exists(train_jl_path):
-        print(f"Loading train data from {train_jl_path}")
-        # Joblib stores {sc: nc_dict[sc]} for all configs; merge back into nc_dict
-        saved = cl.invalidate_stale_vars(joblib.load(train_jl_path))
-        if isinstance(saved, dict) and any(k in sim_configs for k in saved):
-            # new multi-config format: {sc: {...}, ...}
-            cl.deep_merge(nc_dict, saved)
+
+    # One joblib per sim_config (mirrors ppe_summary_cm1.py). Each per-config
+    # joblib stores nc_dict[sc] directly (NOT wrapped in {sc: ...}).
+    client = None
+    def _get_client():
+        nonlocal client
+        if client is None:
+            dask_scratch = os.path.join(os.environ.get('PSCRATCH', '~/tmp'), 'dask-scratch-space')
+            client = Client(n_workers=n_workers, threads_per_worker=1, processes=True, local_directory=dask_scratch)
+            print(f"Dask dashboard available at: {client.dashboard_link}")
+            print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
+        return client
+
+    for sim_config in sim_configs:
+        train_jl_path = f"{cl.output_dir}/{nikki}/joblibs/{sim_config}_lwpthres{round(lwp_threshold*1e3)}.joblib"
+        # Subset of ppe_idx that belongs to this sim_config
+        ppe_idx_sim = [ippe for ippe in ppe_idx
+                       if (isinstance(ippe, dict) and ippe['sim_config'] == sim_config)]
+
+        if os.path.exists(train_jl_path):
+            print(f"Loading {sim_config} data from {train_jl_path}")
+            saved = cl.invalidate_stale_vars(joblib.load(train_jl_path))
+            # Legacy fallback: if the joblib was written in the old multi-config
+            # format ({sc: {...}, ...}), unwrap the relevant inner dict.
+            if isinstance(saved, dict) and sim_config in saved and 'SLC-BOSS' not in saved:
+                saved = saved[sim_config]
+            nc_dict[sim_config] = saved
+
+            # Load global attributes from the first valid member of this sim_config
+            if ppe_idx_sim:
+                finfo_attr = train_file_info.copy()
+                finfo_attr['sim_config'] = sim_config
+                cl.load_cm1_attrs(finfo_attr, nc_dict=nc_dict, ipert=ppe_idx_sim[0], continuous_ic=True)
+
+            # Check for missing vars/members in cached data
+            try:
+                cached = nc_dict[sim_config][train_mp]['cic']
+            except KeyError:
+                cached = {}
+            ppe_vars_to_load = set()
+            members_to_reload = []
+            for ippe in ppe_idx_sim:
+                gid = ippe['global_id'] if isinstance(ippe, dict) else int(ippe)
+                member_dict = cached.get(gid)
+                if member_dict is None:
+                    members_to_reload.append(ippe)
+                    ppe_vars_to_load.update(var_interest)
+                    continue
+                missing = [v for v in var_interest if v not in member_dict]
+                if missing:
+                    members_to_reload.append(ippe)
+                    ppe_vars_to_load.update(missing)
+            ppe_vars_to_load = list(ppe_vars_to_load)
+
+            if members_to_reload:
+                print(f"Reloading {len(members_to_reload)}/{len(ppe_idx_sim)} members for {sim_config}; vars: {ppe_vars_to_load}")
+                _get_client()
+                tasks = [
+                    dask.delayed(cl.load_cm1)(
+                        train_file_info, ppe_vars_to_load, steady_state_hrs,
+                        nc_dict=None, continuous_ic=True, ipert=ippe, lwp_threshold=lwp_threshold,
+                    )
+                    for ippe in members_to_reload
+                ]
+                futures = client.compute(tasks)
+                progress(futures)
+                results = client.gather(futures)
+                for r in tqdm(results, desc=f'merging missing vars for {sim_config}'):
+                    cl.deep_merge(nc_dict, r)
+                joblib.dump(nc_dict[sim_config], train_jl_path)
+                print(f"Updated cache saved to {train_jl_path}")
+            else:
+                print(f"All variables of interest already exist for {sim_config}.")
         else:
-            # legacy single-config format: bare inner dict under sim_config_str
-            nc_dict[sim_config_str] = saved
-        # Load global attributes from the first valid member
-        if ppe_idx:
-            print(f"Loading global attributes for {ppe_idx[0]['sim_config']}")
-            finfo_attr = train_file_info.copy()
-            cl.load_cm1_attrs(finfo_attr, nc_dict=nc_dict, ipert=ppe_idx[0], continuous_ic=True)
-        # Check if all variables exist (use first member's config/id)
-        try:
-            ic_str = 'cic'
-            first_ppe = ppe_idx[0]
-            first_sc = first_ppe['sim_config']
-            global_id = first_ppe['global_id'] if isinstance(first_ppe, dict) else int(first_ppe)
-            existing_vars = nc_dict[first_sc][train_mp][ic_str][global_id].keys()
-            vars_to_load = [v for v in var_interest if v not in existing_vars]
-        except (KeyError, IndexError):
-            vars_to_load = var_interest
-
-    if vars_to_load:
-        if vars_to_load != var_interest:
-            print(f"Missing variables in train data: {vars_to_load}. Loading missing ones...")
-        else:
-            print(f"Train data not found or being fully reloaded at {train_jl_path}")
-        dask_scratch = os.path.join(os.environ.get('PSCRATCH', '/home/arthurhu/tmp'), 'dask-scratch-space')
-        client = Client(n_workers=32, threads_per_worker=1, processes=True, local_directory=dask_scratch)
-        print(f"Dask dashboard available at: {client.dashboard_link}")
-        print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
-        tasks = []
-        for ippe in ppe_idx:
-            # ippe carries 'sim_config' for the correct per-member directory;
-            # pass train_file_info with the full list — load_cm1 uses ipert['sim_config']
-            task = dask.delayed(cl.load_cm1)(
-                train_file_info, vars_to_load, steady_state_hrs, nc_dict=None, continuous_ic=True,
-                ipert=ippe, lwp_threshold=lwp_threshold
-            )
-            tasks.append(task)
-
-        print("Computing PPE data in parallel...")
-        futures = client.compute(tasks)
-        progress(futures)
-        results = client.gather(futures)
-
-        for r in tqdm(results, desc='merging PPE results'):
-            cl.deep_merge(nc_dict, r)
-
-        # Save all configs as a single dict keyed by sim_config_str (multi-config format)
-        to_save = {sc: nc_dict[sc] for sc in sim_configs if sc in nc_dict}
-        joblib.dump(to_save, train_jl_path)
-        print(f"Dictionary saved to {train_jl_path}")
-        # Shutdown client
-        client.close()
-    else:
-        print("All variables of interest already exist in train data.")
+            print(f"No cache for {sim_config}; loading all members.")
+            _get_client()
+            tasks = [
+                dask.delayed(cl.load_cm1)(
+                    train_file_info, var_interest, steady_state_hrs,
+                    nc_dict=None, continuous_ic=True, ipert=ippe, lwp_threshold=lwp_threshold,
+                )
+                for ippe in ppe_idx_sim
+            ]
+            print(f"Computing PPE data for {sim_config} in parallel...")
+            futures = client.compute(tasks)
+            progress(futures)
+            results = client.gather(futures)
+            for r in tqdm(results, desc=f'merging PPE results for {sim_config}'):
+                cl.deep_merge(nc_dict, r)
+            joblib.dump(nc_dict[sim_config], train_jl_path)
+            print(f"Dictionary saved to {train_jl_path}")
 
 
     # In[17]:
@@ -196,8 +247,32 @@ def main(camp='dycoms'):
     for ippe, ppe in enumerate(tqdm(ppe_idx, desc='loading params')):
         sc = ppe['sim_config']   # per-member config (handles multi-config correctly)
         member = ppe['member']
+        gid = ppe['global_id']
+        # Always read params.csv to preserve param ordering & count, then
+        # NaN it out if the member is a load_cm1 early-error case. Signature:
+        # 'params' key in nc_dict (new path) OR all var_interest values NaN
+        # (covers older cached joblibs from before the 'params' marker existed).
         param_df = pd.read_csv(f"{cl.output_dir}{nikki}/{sc}/{train_mp}/{member}/params.csv")
-        params_ppe.append(param_df.values[:,1])
+        member_rec = nc_dict.get(sc, {}).get(train_mp, {}).get('cic', {}).get(gid, {})
+        is_bad = False
+        if isinstance(member_rec, dict):
+            if 'params' in member_rec:
+                is_bad = True
+            elif var_interest:
+                vals = []
+                for v in var_interest:
+                    entry = member_rec.get(v)
+                    if isinstance(entry, dict):
+                        vals.append(entry.get('value'))
+                if vals and all(
+                    (val is None) or (isinstance(val, float) and np.isnan(val))
+                    for val in vals
+                ):
+                    is_bad = True
+        row = param_df.values[:, 1].astype(float).copy()
+        if is_bad:
+            row[:] = np.nan
+        params_ppe.append(row)
     params_ppe = np.array(params_ppe)
 
 
@@ -418,7 +493,7 @@ def main(camp='dycoms'):
             return 1e-4
         if 'precip_frac' in ivar:
             return 0.01
-        if 'onset' in ivar or 'M3_' in ivar:
+        if 'onset' in ivar or 'M3_' in ivar or 'cloud_thickness' in ivar:
             return np.nan  # plain standard scaler, no asinh
         finite = ppe_pos_vals[np.isfinite(ppe_pos_vals)]
         return np.nanpercentile(finite, 10) if finite.size else 1.0
