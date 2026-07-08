@@ -610,8 +610,11 @@ def create_nc_variables_structure(nc_dict, vars_vn, var_interest, l_pert):
             'data': None
         }
 
-        # assuming it's a time series var if 'last' is not in the name
-        if 'ss' not in ivar and 'max' not in ivar and 'onset' not in ivar:
+        # assuming it's a time series var if 'last' is not in the name.
+        # 'overshoot'/'persist' are scalar full-run transient diagnostics
+        # (peak/steady, steady/peak), so they are NOT time series.
+        _scalar_tags = ('ss', 'max', 'onset', 'overshoot', 'persist')
+        if not any(tag in ivar for tag in _scalar_tags):
             ncvars['ppe_' + ivar]['dims'] += ('ntime',)
             ncvars['tgt_' + ivar]['dims'] += ('ntime',)
 
