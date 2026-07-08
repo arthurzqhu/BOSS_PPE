@@ -96,6 +96,70 @@ def calc_lwp(ds, dz, rho=None):
     dz_broadcast = dz[None, :, None, None]
     return np.sum(lwc * dz_broadcast * rho, axis=(0, 1))
 
+def calc_path(ds, vn, dz, scale=1.0, rho=None):
+    """Column-integrated path of moment field `vn`, mirroring calc_lwp's
+    integration (rho-weighted, dz-weighted vertical sum). Returns (ny, nx)."""
+    if rho is None:
+        rho = calc_rho(ds)
+    field = np.asarray(ds.variables[vn][...]) * scale
+    dz_broadcast = dz[None, :, None, None]
+    return np.nansum(field * dz_broadcast * rho, axis=(0, 1))
+
+# Transient diagnostics that the steady-state window cannot see (their signal
+# lives in the spin-up/onset window). Computed by a single full-run scan
+# (_diagnose_run_transients), wired into load_cm1 like the onset vars, and
+# skipped by the normal extract_and_reduce/aggregate path.
+TRANSIENT_VARS = ('M6_dmpath_overshoot', 'prate_dm_overshoot', 'lwp_persist_ss')
+
+def _diagnose_run_transients(file_paths, dt, dz, ss_hrs):
+    """Single full-run scan (like _diagnose_precip_onset) that builds the
+    domain-mean time series of M6 path, LWP, and surface rain rate, then
+    returns diagnostics the steady-state window cannot capture:
+      - M6_dmpath_overshoot / prate_dm_overshoot: peak-over-run divided by the
+        steady-state mean. >1 flags the early spike-then-decay in SLC-BOSS.
+      - lwp_persist_ss: steady-state mean divided by peak LWP. <1 flags cloud
+        rain-out / collapse (the cloud depletes after peaking).
+    Steady state = mean over the last ss_hrs. Corrupt files are skipped.
+    Returns a dict; missing/failed quantities are np.nan.
+    """
+    out = {v: np.nan for v in TRANSIENT_VARS}
+    if not np.isfinite(dt) or dt <= 0 or not file_paths:
+        return out
+    scale6 = 1e-4 ** 6
+    times, m6p, lwpp, prt = [], [], [], []
+    for fp in file_paths:
+        try:
+            with nc.Dataset(fp, 'r') as ds:
+                t_hr = float(np.asarray(ds.variables['time'][:]).item()) / 3600.0
+                rho = calc_rho(ds)
+                lwp = calc_lwp(ds, dz, rho=rho)
+                m6_path = calc_path(ds, 'qc6', dz, scale=scale6, rho=rho)
+                prate = np.asarray(ds.variables['prate'][0]) * 3600.0
+                times.append(t_hr)
+                m6p.append(np.nanmean(m6_path))
+                lwpp.append(np.nanmean(lwp))
+                prt.append(np.nanmean(prate))
+        except (OSError, KeyError):
+            # corrupt file, or an early spin-up file missing moment/prate vars
+            continue
+    if len(times) == 0:
+        return out
+    times = np.asarray(times, dtype=float)
+    m6p = np.asarray(m6p, dtype=float)
+    lwpp = np.asarray(lwpp, dtype=float)
+    prt = np.asarray(prt, dtype=float)
+    t_end = np.nanmax(times)
+    ss_mask = times >= (t_end - ss_hrs)
+
+    def _ratio(peak, base):
+        return float(peak / base) if (np.isfinite(base) and base > 0) else np.nan
+
+    out['M6_dmpath_overshoot'] = _ratio(np.nanmax(m6p), np.nanmean(m6p[ss_mask]))
+    out['prate_dm_overshoot'] = _ratio(np.nanmax(prt), np.nanmean(prt[ss_mask]))
+    lwp_peak = np.nanmax(lwpp)
+    out['lwp_persist_ss'] = _ratio(np.nanmean(lwpp[ss_mask]), lwp_peak)
+    return out
+
 if 'macOS' in platform.platform():
     output_dir = '/Volumes/ESSD/research/cm1/'
     bossppe_dir = '/Users/arthurhu/github/BOSS_PPE/'
@@ -150,7 +214,7 @@ output_var_set = {
                   'M6_path_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'SS M6'},
                   'M9_path_ss': {'var_source': 'qc9', 'var_unit': '$m^9$/$m^2$', 'scale': 1e-4**9, 'longname': 'SS M9'},
                   'M0_dmpath_ss': {'var_source': 'qc0', 'var_unit': '1/$m^2$', 'longname': 'SS DM LNP'}, 
-                  'M3_dmpath_ss': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'SS DM LWC'}, 
+                  'M3_dmpath_ss': {'var_source': 'qc3', 'var_unit': 'kg/$m^2$', 'scale': M3toQ, 'longname': 'SS DM LWP'}, 
                   'M4_dmpath_ss': {'var_source': 'qc4', 'var_unit': '$m^4$/$m^2$', 'scale': 1e-4**4, 'longname': 'SS DM M4'},
                   'M5_dmpath_ss': {'var_source': 'qc5', 'var_unit': '$m^5$/$m^2$', 'scale': 1e-4**5, 'longname': 'SS DM M5'},
                   'M6_dmpath_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/$m^2$', 'scale': 1e-4**6, 'longname': 'SS DM M6'},
@@ -376,7 +440,17 @@ output_var_set = {
                   'reff': {'var_source': 'reff', 'var_unit': 'μm', 'scale': 1e6, 'longname': 'Effective radius (μm)'},
                   # LWP is already given as an input so no var_source is needed
                   'decorr_length_ss': {'var_source': [], 'var_unit': 'm', 'longname': 'Decorrelation Length (m)'}, 
-                  'precip_frac_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'longname': 'Precipitation Fraction'},
+                  'precip_frac_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'longname': 'Rain Area Fraction'},
+                  # DSD tail-shape constraint: in-cloud mean tail diameter (M6/M4)^(1/2)
+                  # in microns. Isolates the M6 tail relative to M4 (the highest matched
+                  # moment), the exact axis of the "M6 high, M4 fine" bias.
+                  'Dtail_dm_ss': {'var_source': ['qc4', 'qc6'], 'var_unit': 'μm', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud tail diameter (M6/M4)^0.5'},
+                  # Transient diagnostics (full-run scan; see _diagnose_run_transients):
+                  # overshoot = peak/steady (penalizes early spike-then-decay),
+                  # persistence = steady/peak LWP (penalizes rain-out collapse).
+                  'M6_dmpath_overshoot': {'var_source': 'qc6', 'var_unit': '-', 'longname': 'M6 path peak/steady overshoot'},
+                  'prate_dm_overshoot': {'var_source': 'prate', 'var_unit': '-', 'longname': 'Rain rate peak/steady overshoot'},
+                  'lwp_persist_ss': {'var_source': 'qc3', 'var_unit': '-', 'longname': 'LWP steady/peak persistence'},
                   }
 
 def get_pert_idx(file_info):
@@ -625,6 +699,8 @@ def _is_full_timeseries_var(var_name, meta):
     """
     if var_name in ('v_precip_onset', 't_precip_onset'):
         return False
+    if var_name in TRANSIENT_VARS:
+        return False
     if meta['is_ss'] or meta['is_prc']:
         return False
     if 'curtainlast' in var_name or '_curtain' in var_name:
@@ -775,6 +851,10 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     # Extract attributes and coordinates (uses last file)
     load_cm1_attrs(file_info, nc_dict, ipert=ipert, continuous_ic=continuous_ic)
 
+    # Transient diagnostics (overshoot / persistence) require the full run,
+    # since their signal lives in the spin-up/onset window; scan once here.
+    needs_transients = any(v in var_interest for v in TRANSIENT_VARS)
+
     with _open_nc(files_to_use[-1]) as ds0:
         nc_dict[fsim_config][mp].setdefault(ic_str, {})
         if continuous_ic or l_pert:
@@ -804,6 +884,8 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     z = (zf[1:] + zf[:-1])/2
     dx = nc_dict[fsim_config]['x'][1] - nc_dict[fsim_config]['x'][0]
 
+    transients = _diagnose_run_transients(file_paths, dt, dz, ss_hrs) if needs_transients else {}
+
     # Pre-parse meta and setup collectors
     var_meta = {vn: parse_var_meta(vn) for vn in var_interest}
     raw_collector = {vn: [] for vn in var_interest}
@@ -820,8 +902,9 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
             lwp_pcts[ifp] = np.mean(lwp > lwp_threshold) * 100
 
             for vn in var_interest:
-                # Onset vars are diagnosed via a separate scan above.
-                if vn in ('v_precip_onset', 't_precip_onset'):
+                # Onset vars and transient diagnostics are diagnosed via
+                # separate full-run scans above, not the SS-window loop.
+                if vn in ('v_precip_onset', 't_precip_onset') or vn in TRANSIENT_VARS:
                     continue
                 # Every file in files_to_use is within the SS window,
                 # so unconditionally extract. KeyError means the source variable
@@ -870,6 +953,8 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
         elif vn == 'v_precip_onset':
             # 1/t in hr^-1; never-rains → 0.0 (slowest possible signal for NN/GP)
             dst[vn]['value'] = (1.0 / t_onset_hr) if (np.isfinite(t_onset_hr) and t_onset_hr > 0) else 0.0
+        elif vn in TRANSIENT_VARS:
+            dst[vn]['value'] = transients.get(vn, np.nan)
         else:
             val = aggregate_timeseries(vn, raw_collector[vn], var_meta[vn])
             # Align time-axis-leading arrays with full-sim `time`: backfill the
@@ -1079,6 +1164,16 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
                 res = np.nan
             else:
                 res = np.mean(valid)
+        elif 'Dtail' in var_name:
+            m4_raw, m6_raw = data  # (ntime, nz, ny, nx) each; masked to NaN outside cloud
+            # tail diameter (M6/M4)^(1/2): M4_phys = m4_raw*1e-16, M6_phys = m6_raw*1e-24 (SI)
+            m4_phys = np.where(m4_raw > 0, m4_raw, np.nan) * 1e-16
+            m6_phys = np.where(m6_raw > 0, m6_raw, np.nan) * 1e-24
+            dtail = np.sqrt(m6_phys / m4_phys) * 1e6  # m -> micron
+            # Use .filled(np.nan) to avoid MaskedArray fill_value contamination (see KY036 comment)
+            dt_plain = np.array(dtail.filled(np.nan) if hasattr(dtail, 'filled') else dtail, dtype=np.float64)
+            valid = dt_plain[np.isfinite(dt_plain)]
+            res = np.nan if valid.size == 0 else np.mean(valid)
         elif 'KY346' in var_name:
             m3, m4_raw, m6_raw = data  # (ntime, nz, ny, nx) each; masked to NaN outside cloud
             m3_safe = np.where(m3 > 0, m3, np.nan)
@@ -1174,7 +1269,7 @@ def aggregate_timeseries(var_name, ts, meta):
             res = (num / den)**(1/3) * 1e6 if den > 0 else np.nan
             return res
 
-        if 'KY036' in var_name or 'KY346' in var_name or 'KX_' in var_name:
+        if 'KY036' in var_name or 'KY346' in var_name or 'KX_' in var_name or 'Dtail' in var_name:
             # Each timestep already returned a scalar (mean or 99th pct); just average over ss timesteps
             return np.nanmean(ts)
 
