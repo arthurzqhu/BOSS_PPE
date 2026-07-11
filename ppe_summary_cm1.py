@@ -57,7 +57,8 @@ def main(camp='dycoms'):
     n_test = n_workers
 
     ppe_basename = [
-                    'fullmp_dycoms_2cat_base_arviz'
+                    'fullmp_dycoms_fkbdebug_r0_lhs',
+                    'fullmp_dycoms_fkbdebug_r0_extra_lhs',
                     # 'fullmp_dycoms_offpolicy_r6_sednewparam2_lhs',
                     # 'fullmp_dycoms_offpolicy_r6_fixclouddz_lhs',
                     # 'fullmp_dycoms_r7_pilot_lhs',
@@ -142,7 +143,8 @@ def main(camp='dycoms'):
 
     if 'fullmp' in ppe_basename[0]:
         var_interest += [
-                     'v_precip_onset', 'precip_frac_ss', 'prate_dm_ss', 'cloud_thickness_dm_ss',
+                     'v_precip_onset', 'precip_frac_ss', 'prate_dm_ss', 'cloud_thickness_dm_ss', 
+                     'Dtail_dm_ss', 'M6_dmpath_overshoot', 'prate_dm_overshoot','lwp_persist_ss',
                 ]
 
     if 'SLC' not in train_mp:
@@ -530,6 +532,8 @@ def main(camp='dycoms'):
         value_greater_0 = ncvars['ppe_' + ivar]['data'][ncvars['ppe_' + ivar]['data'] > 0]
         if 'V_M' in ivar:
             global_attrs['thresholds_eff0'].append(0.1)
+        elif 'overshoot' in ivar or 'persist' in ivar:
+            global_attrs['thresholds_eff0'].append(0.)
         elif 'prate' in ivar:
             global_attrs['thresholds_eff0'].append(1e-4)
         elif 'precip_frac' in ivar:

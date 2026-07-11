@@ -37,10 +37,12 @@ def main(camp='dycoms'):
     lwp_threshold = 0.02
 
     ppe_basename = [
-                    'fullmp_dycoms_offpolicy_r6_sednewparam2_lhs',
-                    'fullmp_dycoms_offpolicy_r6_fixclouddz_lhs',
-                    'fullmp_dycoms_r7_pilot_lhs',
-                    'fullmp_dycoms_r7_extra_lhs',
+                    'fullmp_dycoms_fkbdebug_r0_lhs',
+                    'fullmp_dycoms_fkbdebug_r0_extra_lhs',
+                    # 'fullmp_dycoms_offpolicy_r6_sednewparam2_lhs',
+                    # 'fullmp_dycoms_offpolicy_r6_fixclouddz_lhs',
+                    # 'fullmp_dycoms_r7_pilot_lhs',
+                    # 'fullmp_dycoms_r7_extra_lhs',
                     ]
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
     # sim_config_str is used for joblib paths, plot dirs, and saved-file names
@@ -106,9 +108,10 @@ def main(camp='dycoms'):
         var_interest += [
                          'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
                          'prate_dm_ss', 'prate_ds_ss', 'cloud_thickness_dm_ss',
-                         # 'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
+                         'Dtail_dm_ss', 'M6_dmpath_overshoot', 'prate_dm_overshoot','lwp_persist_ss',
+                         'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
                          # 'sfM0_dm_100m_ss', 'sfM3_dm_100m_ss', 'sfM4_dm_100m_ss', 'sfM6_dm_100m_ss',
-                         # 'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
+                         'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
                          # 'sfM0_dm_500m_ss', 'sfM3_dm_500m_ss', 'sfM4_dm_500m_ss', 'sfM6_dm_500m_ss',
                          # 'M0_dm_10m_ss', 'M3_dm_10m_ss', 'M4_dm_10m_ss', 'M6_dm_10m_ss',
                          # 'M0_dm_100m_ss', 'M3_dm_100m_ss', 'M4_dm_100m_ss', 'M6_dm_100m_ss',
@@ -367,11 +370,11 @@ def main(camp='dycoms'):
     # In[19]:
 
     print('plotting ...')
-    var_interest_blk1 = var_interest[:16]
-    var_interest_blk2 = var_interest[16:32]
-    var_interest_blk3 = var_interest[32:]
-    # var_interest_blks = [var_interest_blk1]
-    var_interest_blks = [var_interest_blk1, var_interest_blk2, var_interest_blk3]
+    var_interest_blk1 = var_interest[:]
+    # var_interest_blk2 = var_interest[16:32]
+    # var_interest_blk3 = var_interest[32:]
+    var_interest_blks = [var_interest_blk1]
+    # var_interest_blks = [var_interest_blk1, var_interest_blk2, var_interest_blk3]
     block_names = ['summary', 'sedfluxes', 'moments']
 
 
@@ -390,7 +393,7 @@ def main(camp='dycoms'):
     tolerance = 3
     mask_post = None
     for var_interest_blk, block_name in zip(var_interest_blks, block_names):
-        fig, axs = plt.subplots(4, 4, figsize=(12, 12), sharex=True)
+        fig, axs = plt.subplots(7, 4, figsize=(12, 12), sharex=True)
         axs = axs.flatten()
         for ivar, var_name in enumerate(var_interest_blk):
             tgt_data = []
@@ -469,7 +472,7 @@ def main(camp='dycoms'):
 
             axs[ivar].set_title(cl.output_var_set[var_name]['longname'])
             axs[ivar].set_xscale('log')
-            if 'onset' in var_name or 'frac' in var_name:
+            if 'onset' in var_name or 'frac' in var_name or 'persist' in var_name:
                 axs[ivar].set_yscale('linear')
             else:
                 axs[ivar].set_yscale('log')
@@ -487,18 +490,20 @@ def main(camp='dycoms'):
 
     def _eff0_for(ivar, ppe_pos_vals):
         """Match ppe_summary_cm1.py thresholds_eff0 logic."""
+        if 'onset' in ivar or 'M3_' in ivar or 'cloud_thickness' in ivar:
+            return np.nan
+        if 'overshoot' in ivar or 'persist' in ivar:
+            return 0
         if 'V_M' in ivar:
             return 0.1
         if 'prate' in ivar:
             return 1e-4
         if 'precip_frac' in ivar:
             return 0.01
-        if 'onset' in ivar or 'M3_' in ivar or 'cloud_thickness' in ivar:
-            return np.nan  # plain standard scaler, no asinh
         finite = ppe_pos_vals[np.isfinite(ppe_pos_vals)]
         return np.nanpercentile(finite, 10) if finite.size else 1.0
 
-    fig, axs = plt.subplots(4, 4, figsize=(12, 12), sharex=True)
+    fig, axs = plt.subplots(7, 4, figsize=(12, 12), sharex=True)
     axs = axs.flatten()
     for ivar, var_name in enumerate(var_interest_blk1):
         tgt_data = []
@@ -531,11 +536,21 @@ def main(camp='dycoms'):
         # Compute eff0 from POSITIVE PPE values (matches ppe_summary_cm1.py)
         ppe_pos = train_data[train_data > 0]
         eff0 = _eff0_for(var_name, ppe_pos)
-        use_asinh = np.isfinite(eff0)
+        if np.isnan(eff0):
+            transform_method = 'std'
+        elif eff0==0:
+            transform_method = 'log'
+        else:
+            transform_method = 'asinh'
 
         def transform(y):
             y = np.asarray(y, dtype=float)
-            return smooth_linlog(y, eff0) if use_asinh else y
+            if transform_method == 'std':
+                return y
+            elif transform_method =='log':
+                return np.log10(y)
+            elif transform_method =='asinh':
+                return smooth_linlog(y, eff0)
 
         # Fit standard scaler on PPE (transformed); apply to both
         ppe_t = transform(train_data).reshape(-1, 1)
@@ -555,7 +570,12 @@ def main(camp='dycoms'):
         if len(train_scaled) > 0:
             axs[ivar].scatter(na_train, train_scaled, label='Train PPE', s=5, color='tab:blue')
 
-        label_t = f'asinh@eff0={eff0:.2e}' if use_asinh else 'standard only'
+        if transform_method == 'std':
+            label_t = 'standard only'
+        elif transform_method == 'log':
+            label_t = 'standard log'
+        elif transform_method == 'asinh':
+            label_t = f'asinh@eff0={eff0:.2e}'
         axs[ivar].set_title(f"{cl.output_var_set[var_name]['longname']}\n[{label_t}]", fontsize=9)
         axs[ivar].set_xscale('log')
         axs[ivar].set_yscale('linear')  # already standardized
