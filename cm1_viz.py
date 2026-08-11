@@ -28,16 +28,16 @@ import dask
 dask.config.set({"distributed.worker.multiprocessing-method": "fork"})
 from dask.distributed import Client, progress
 import joblib
-
-
-# In[2]:
-
-
-import importlib
-importlib.reload(cl)
+import socket
 
 
 # In[ ]:
+
+hostname = socket.gethostname()
+if hostname == "simurgh":
+    n_workers = 32
+else:
+    n_workers = 8
 
 
 import argparse as _argparse
@@ -50,26 +50,30 @@ _p.add_argument('--sim_config', type=str, default=None,
                 help="Run config name, e.g. 'fullmp_rico_test_resol'. "
                      "Defaults to 'fullmp_<camp>_test_resol'.")
 _p.add_argument('--target_sim_config', type=str, default=None,
-                help="Defaults to 'fullmp_{camp}_tgt_NewCoalKernel_pert'.")
+                help="Defaults to 'fullmp_{camp}_tgt_pert_oldcoalkernel'.")
+_p.add_argument('--target_only', action='store_true',
+                help="Plot only the target run; skip loading/plotting sim_config entirely.")
 _a, _ = _p.parse_known_args()
 
 nikki = _a.nikki
 target_nikki = 'target'
+target_only = _a.target_only
 
 camps = ['rico', 'dycoms']
 if _a.camp is not None:
     camp = _a.camp
-elif _a.sim_config is not None:
-    _matches = [c for c in camps if c in _a.sim_config]
+elif _a.sim_config is not None or (target_only and _a.target_sim_config is not None):
+    _detect_from = _a.sim_config if _a.sim_config is not None else _a.target_sim_config
+    _matches = [c for c in camps if c in _detect_from]
     if len(_matches) != 1:
-        raise ValueError(f"Could not auto-detect camp from sim_config={_a.sim_config!r}; "
+        raise ValueError(f"Could not auto-detect camp from {_detect_from!r}; "
                          f"matched {_matches}. Pass --camp explicitly.")
     camp = _matches[0]
 else:
     camp = 'dycoms'
 sim_config = _a.sim_config if _a.sim_config is not None else f'fullmp_{camp}_test_resol'
 # sim_configs = [simr2_config]
-l_pert = True
+l_pert = False
 lwp_threshold = 0.02
 
 
@@ -86,45 +90,63 @@ else:
     onset_skip_hrs = 0.0
 
 # target_sim_config = _a.target_sim_config if _a.target_sim_config is not None else f'NCE_{camp}_tgt'
-target_sim_config = _a.target_sim_config if _a.target_sim_config is not None else f'fullmp_{camp}_tgt_NewCoalKernel_pert'
+target_sim_config = _a.target_sim_config if _a.target_sim_config is not None else f'fullmp_{camp}_tgt_pert_oldcoalkernel'
+if camp == 'rico':
+    steady_state_hrs = 5
+    min_files = 33
+elif camp == 'dycoms':
+    steady_state_hrs = 2
+    min_files = 25
+else:
+    min_files = None
 
-sim_configs = [sim_config]
+sim_configs = [] if target_only else [sim_config]
 
-plot_dir = f"plots/{nikki}/{sim_config}/"
+# In target-only mode nothing is read from / written under sim_config, so key the
+# plot directory and figure filenames off the target run instead.
+fig_prefix = target_sim_config if target_only else sim_config
+plot_dir = f"plots/{nikki}/{fig_prefix}/"
 if not os.path.exists(plot_dir):
     os.makedirs(plot_dir)
 
 n_init = 1
 target_mp = 'BIN-TAU'
-mconfigs = os.listdir(cl.output_dir + nikki)
-vars_strs, vars_vn = lp.get_dics(cl.output_dir, nikki, sim_config, n_init)
-# Auto-detect train MP(s) from the first Na subdirectory under sim_config
-_first_na = vars_strs[0][0]
-_mp_search_dir = os.path.join(cl.output_dir, nikki, sim_config, _first_na)
-if os.path.isdir(_mp_search_dir):
-    train_mps = sorted(d for d in os.listdir(_mp_search_dir)
-                       if os.path.isdir(os.path.join(_mp_search_dir, d)) and d != target_mp)
+mconfigs = [] if target_only else os.listdir(cl.output_dir + nikki)
+# Initial conditions (Na subdirs) come from whichever run we actually plot.
+if target_only:
+    vars_strs, vars_vn = lp.get_dics(cl.output_dir, target_nikki, target_sim_config, n_init)
 else:
+    vars_strs, vars_vn = lp.get_dics(cl.output_dir, nikki, sim_config, n_init)
+# Auto-detect train MP(s) from the first Na subdirectory under sim_config
+if target_only:
     train_mps = []
-if not train_mps:
-    train_mps = ['SLC-BOSS']
-train_mp = train_mps[0]
+else:
+    _first_na = vars_strs[0][0]
+    _mp_search_dir = os.path.join(cl.output_dir, nikki, sim_config, _first_na)
+    if os.path.isdir(_mp_search_dir):
+        train_mps = sorted(d for d in os.listdir(_mp_search_dir)
+                           if os.path.isdir(os.path.join(_mp_search_dir, d)) and d != target_mp)
+    else:
+        train_mps = []
+    if not train_mps:
+        train_mps = ['SLC-BOSS']
+train_mp = train_mps[0] if train_mps else None
 var_interest = ['M0_dmpath', 'M3_dmpath', 'M4_dmpath', 'M6_dmpath', 'prate_dm',
                 'M0_dmprof', 'M3_dmprof', 'M4_dmprof', 'M6_dmprof',
                 # 'adv_M0_dmprof', 'adv_M3_dmprof', 'adv_M4_dmprof', 'adv_M6_dmprof',
-                'evap_M0_dmprof', 'evap_M3_dmprof', 'evap_M4_dmprof', 'evap_M6_dmprof',
-                'sedflux_M0_dmprof', 'sedflux_M3_dmprof', 'sedflux_M4_dmprof', 'sedflux_M6_dmprof',
-                'vfall_M0_dmprof', 'vfall_M3_dmprof', 'vfall_M4_dmprof', 'vfall_M6_dmprof',
-                'meanD_03_dmprof', 'meanD_34_dmprof', 'meanD_36_dmprof', 'meanD_06_dmprof',
-                'M0_curtainlast', 'M3_curtainlast', 'M4_curtainlast', 'M6_curtainlast',
+                # 'evap_M0_dmprof', 'evap_M3_dmprof', 'evap_M4_dmprof', 'evap_M6_dmprof',
+                # 'sedflux_M0_dmprof', 'sedflux_M3_dmprof', 'sedflux_M4_dmprof', 'sedflux_M6_dmprof',
+                # 'vfall_M0_dmprof', 'vfall_M3_dmprof', 'vfall_M4_dmprof', 'vfall_M6_dmprof',
+                # 'meanD_03_dmprof', 'meanD_34_dmprof', 'meanD_36_dmprof', 'meanD_06_dmprof',
+                # 'M0_curtainlast', 'M3_curtainlast', 'M4_curtainlast', 'M6_curtainlast',
                 # 'adv_M0_curtainlast', 'adv_M3_curtainlast', 'adv_M4_curtainlast', 'adv_M6_curtainlast',
-                'evap_M0_curtainlast', 'evap_M3_curtainlast', 'evap_M4_curtainlast', 'evap_M6_curtainlast',
-                'sedflux_M0_curtainlast', 'sedflux_M3_curtainlast', 'sedflux_M4_curtainlast', 'sedflux_M6_curtainlast',
-                'vfall_M0_curtainlast', 'vfall_M3_curtainlast', 'vfall_M4_curtainlast', 'vfall_M6_curtainlast',
-                'meanD_03_curtainlast', 'meanD_34_curtainlast', 'meanD_36_curtainlast', 'meanD_06_curtainlast',
+                # 'evap_M0_curtainlast', 'evap_M3_curtainlast', 'evap_M4_curtainlast', 'evap_M6_curtainlast',
+                # 'sedflux_M0_curtainlast', 'sedflux_M3_curtainlast', 'sedflux_M4_curtainlast', 'sedflux_M6_curtainlast',
+                # 'vfall_M0_curtainlast', 'vfall_M3_curtainlast', 'vfall_M4_curtainlast', 'vfall_M6_curtainlast',
+                # 'meanD_03_curtainlast', 'meanD_34_curtainlast', 'meanD_36_curtainlast', 'meanD_06_curtainlast',
                 'M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss',
                 'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss',
-                'prate_dm_ss', 'prate_ds_ss', 'v_precip_onset', 'precip_frac_ss',
+                # 'prate_dm_ss', 'prate_ds_ss', 'v_precip_onset', 'precip_frac_ss',
                  ] # domain-mean path
 # var_interest += ['M0_curtain_mean', 'M3_curtain_mean', 'M4_curtain_mean', 'M6_curtain_mean'] # curtain
                 # ] # last 2 hr mean path
@@ -164,16 +186,19 @@ if 'nc_dict' not in globals():
 
 # load BOSS data
 
-for initcond_combo in tqdm(itertools.product(*[vars_strs[0]])):
-    train_file_info.update({'vars_str': initcond_combo})
-    for _sc in sim_configs:
-        for _tmp in train_mps:
-            train_file_info.update({'sim_config': _sc, 'mp_config': _tmp})
-            cl.load_cm1(train_file_info, var_interest, steady_state_hrs, nc_dict, False, lwp_threshold=lwp_threshold)
+if not target_only:
+    for initcond_combo in tqdm(itertools.product(*[vars_strs[0]])):
+        train_file_info.update({'vars_str': initcond_combo})
+        for _sc in sim_configs:
+            for _tmp in train_mps:
+                train_file_info.update({'sim_config': _sc, 'mp_config': _tmp})
+                cl.load_cm1(train_file_info, var_interest, steady_state_hrs, nc_dict, False, lwp_threshold=lwp_threshold)
     # for ref_mp in ref_mps:
     #     train_file_info_2cat = train_file_info.copy()
     #     train_file_info_2cat.update({'sim_config': sim2cat_config, 'mp_config': ref_mp})
     #     cl.load_cm1(train_file_info_2cat, var_interest, steady_state_hrs, nc_dict, False, lwp_threshold=lwp_threshold)
+else:
+    print("target_only: skipping load of sim_config data")
 
 
 # In[6]:
@@ -236,9 +261,9 @@ if vars_to_load:
     else:
         print(f"Target data not found or being fully reloaded at {tgt_jl_path}")
     dask_scratch = os.path.join(os.environ.get('PSCRATCH', '~/tmp'), 'dask-scratch-space')
-    client = Client(n_workers=32, threads_per_worker=1, processes=True, local_directory=dask_scratch)
+    client = Client(n_workers=n_workers, threads_per_worker=1, processes=True, local_directory=dask_scratch)
     print(f"Dask dashboard available at: {client.dashboard_link}")
-    print(f"Using 32 Processes. Scratch: {dask_scratch}")
+    print(f"Using {n_workers} processes. Scratch: {dask_scratch}")
     tasks = []
     for initcond_combo in itertools.product(*vars_strs):
         # CRITICAL: Create a separate copy for each combo to avoid mutating the shared reference
@@ -280,17 +305,25 @@ else:
 # In[7]:
 
 
-time = nc_dict[sim_config]['time']/3600
+main_sim_config = target_sim_config if target_only else sim_config
+time = nc_dict[main_sim_config]['time']/3600
 
 _tab_colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple', 'tab:brown']
-_n_total = len(train_mps) + 1
-color_order = _tab_colors[:_n_total]
-mp_markers = ['o'] * len(train_mps) + ['*']
-idx_to_plot = [0, 1]
-mp_labels = list(train_mps) + [target_mp]
+if target_only:
+    # single row / single curve: the target only
+    all_sim_configs = [target_sim_config]
+    mp_labels = [target_mp]
+    mp_markers = ['*']
+    color_order = ['tab:orange']
+else:
+    all_sim_configs = [sim_config, target_sim_config]
+    mp_labels = list(train_mps) + [target_mp]
+    mp_markers = ['o'] * len(train_mps) + ['*']
+    color_order = _tab_colors[:len(mp_labels)]
+_n_total = len(mp_labels)
+idx_to_plot = list(range(len(all_sim_configs)))
 line_styles = ['-'] * _n_total
 line_widths = [2.5] * _n_total
-all_sim_configs = [sim_config, target_sim_config]
 
 # color_order = ['cornflowerblue', 'mediumblue', 'navy', 'tab:orange']
 # all_sim_configs = [simr0_config, simr1_config, simr2_config, target_sim_config]
@@ -306,8 +339,8 @@ all_sim_configs = [sim_config, target_sim_config]
 # line_styles = ['-', '-', '-', '-.', '-.']
 # line_widths = [2.5, 2.5, 2.5, 1.5, 1.5]
 
-x = nc_dict[sim_config]['x']
-z = nc_dict[sim_config]['z']
+x = nc_dict[main_sim_config]['x']
+z = nc_dict[main_sim_config]['z']
 plt.rcParams['font.size'] = 12
 
 
@@ -344,10 +377,10 @@ for case in vars_strs[0]:
                     min_tgt = np.min(tgt_data, axis=0)
                     max_tgt = np.max(tgt_data, axis=0)
                     axs[iax].plot(time, mean_tgt, label=mp_labels[i], linewidth=3, alpha=0.8, color=color_order[i])
-                    axs[iax].fill_between(time, min_tgt, max_tgt, label=mp_labels[i], linewidth=3, alpha=0.3, color=color_order[i])
+                    axs[iax].fill_between(time, min_tgt, max_tgt, linewidth=3, alpha=0.3, color=color_order[i])
                 else:
                     axs[iax].plot(time, nc_dict[sc][mp][case][var]['value'],
-                                label=mp_labels[idx],
+                                label=mp_labels[i],
                                 linewidth=3,
                                 alpha=0.8,
                                 color=color_order[i])
@@ -364,27 +397,17 @@ for case in vars_strs[0]:
         axs[iax].set_xticklabels([f"{val:.0f}" for val in time_int], fontsize=12)
         axs[iax].grid(True)
         axs[iax].yaxis.get_offset_text().set_position((-0.15, 0.8))
-        # if 'M6' in var:
-        # if 'M6' in var or 'M4' in var:
         axs[iax].set_yscale('log')
-        # else:
-        #     axs[iax].set_yscale('linear')
-    # After plotting all lines, add a single, consolidated legend for the entire figure
-    # Collect handles and labels from the first axis (can be any axis as labels are consistent)
-    # Place the legend in the empty subplot location (bottom right, i.e., axs[-1])
+    # After plotting all lines, add a single, consolidated legend for the entire figure.
+    # Place it in the empty subplot slot (axs[-2]).
     handles, labels = axs[0].get_legend_handles_labels()
     axs[-2].legend(handles, labels, loc='center', fontsize=14, frameon=True, edgecolor='black', fancybox=True)
     axs[-2].axis('off')  # Hide the axes in the empty subplot
 
-    # # Remove the unused subplot if present
-    # if len(varsplot) < len(axs):
-    #     for j in range(len(varsplot), len(axs)):
-    #         fig.delaxes(axs[j])
-    #     axs = axs[:len(varsplot)]
-
     plt.tight_layout()
-    # Use bbox_inches='tight' to ensure the legend at the top is fully captured in the saved figure
+    # Use bbox_inches='tight' to ensure the legend is fully captured in the saved figure
     plt.savefig(f"{plot_dir}{case}_dm_path_r1.png", bbox_inches='tight')
+    plt.close(fig)
 
 
 # ## profs
@@ -500,7 +523,7 @@ def _plot_prof_panel(varsplot, fname_suffix, use_abs=False, sentinel_thresh=1e20
                     axs[j, i].set_xlabel('Time [hr]', fontsize=12)
 
             bb_row0 = axs[0, i].get_position(fig)
-            bb_row1 = axs[1, i].get_position(fig)
+            bb_row1 = axs[-1, i].get_position(fig)
             cb_left = min(bb_row0.xmin, bb_row1.xmin)
             cb_right = max(bb_row0.xmax, bb_row1.xmax)
             cb_width = cb_right - cb_left
@@ -515,7 +538,7 @@ def _plot_prof_panel(varsplot, fname_suffix, use_abs=False, sentinel_thresh=1e20
                 prefix = '|' if use_abs else ''
                 suffix = '|' if use_abs else ''
                 cbar.set_label(f"{prefix}{shortname}{suffix} [{units}]", fontsize=12)
-        plt.savefig(f"{plot_dir}{sim_config}_{case}_{fname_suffix}.png", bbox_inches='tight')
+        plt.savefig(f"{plot_dir}{fig_prefix}_{case}_{fname_suffix}.png", bbox_inches='tight')
         plt.close(fig)
 
 
@@ -523,14 +546,14 @@ _plot_prof_panel(['M0_dmprof', 'M3_dmprof', 'M4_dmprof', 'M6_dmprof'],
                  fname_suffix='dm_prof')
 # _plot_prof_panel(['adv_M0_dmprof', 'adv_M3_dmprof', 'adv_M4_dmprof', 'adv_M6_dmprof'],
 #                  fname_suffix='adv_dmprof', use_abs=True)
-_plot_prof_panel(['evap_M0_dmprof', 'evap_M3_dmprof', 'evap_M4_dmprof', 'evap_M6_dmprof'],
-                 fname_suffix='evap_dmprof', use_abs=True)
-_plot_prof_panel(['sedflux_M0_dmprof', 'sedflux_M3_dmprof', 'sedflux_M4_dmprof', 'sedflux_M6_dmprof'],
-                 fname_suffix='sedflux_dmprof', use_abs=True)
-_plot_prof_panel(['vfall_M0_dmprof', 'vfall_M3_dmprof', 'vfall_M4_dmprof', 'vfall_M6_dmprof'],
-                 fname_suffix='vfall_dmprof', use_abs=True, linear=True, zero_thresh=1e-12)
-_plot_prof_panel(['meanD_03_dmprof', 'meanD_34_dmprof', 'meanD_36_dmprof', 'meanD_06_dmprof'],
-                 fname_suffix='meanD_dmprof', zero_thresh=1e-6)
+# _plot_prof_panel(['evap_M0_dmprof', 'evap_M3_dmprof', 'evap_M4_dmprof', 'evap_M6_dmprof'],
+#                  fname_suffix='evap_dmprof', use_abs=True)
+# _plot_prof_panel(['sedflux_M0_dmprof', 'sedflux_M3_dmprof', 'sedflux_M4_dmprof', 'sedflux_M6_dmprof'],
+#                  fname_suffix='sedflux_dmprof', use_abs=True)
+# _plot_prof_panel(['vfall_M0_dmprof', 'vfall_M3_dmprof', 'vfall_M4_dmprof', 'vfall_M6_dmprof'],
+#                  fname_suffix='vfall_dmprof', use_abs=True, linear=True, zero_thresh=1e-12)
+# _plot_prof_panel(['meanD_03_dmprof', 'meanD_34_dmprof', 'meanD_36_dmprof', 'meanD_06_dmprof'],
+#                  fname_suffix='meanD_dmprof', zero_thresh=1e-6)
 
 
 # ## curtain plots (last timestep, y-averaged) — (z, x)
@@ -637,7 +660,7 @@ def _plot_curtain_panel(varsplot, fname_suffix, use_abs=False, sentinel_thresh=1
                     axs[j, i].set_xlabel('x [m]', fontsize=12)
 
             bb_row0 = axs[0, i].get_position(fig)
-            bb_row1 = axs[1, i].get_position(fig)
+            bb_row1 = axs[-1, i].get_position(fig)
             cb_left = min(bb_row0.xmin, bb_row1.xmin)
             cb_right = max(bb_row0.xmax, bb_row1.xmax)
             cb_width = cb_right - cb_left
@@ -652,22 +675,22 @@ def _plot_curtain_panel(varsplot, fname_suffix, use_abs=False, sentinel_thresh=1
                 prefix = '|' if use_abs else ''
                 suffix = '|' if use_abs else ''
                 cbar.set_label(f"{prefix}{shortname}{suffix} [{units}]", fontsize=12)
-        plt.savefig(f"{plot_dir}{sim_config}_{case}_{fname_suffix}.png", bbox_inches='tight')
+        plt.savefig(f"{plot_dir}{fig_prefix}_{case}_{fname_suffix}.png", bbox_inches='tight')
         plt.close(fig)
 
 
-_plot_curtain_panel(['M0_curtainlast', 'M3_curtainlast', 'M4_curtainlast', 'M6_curtainlast'],
-                    fname_suffix='dm_curtainlast')
+# _plot_curtain_panel(['M0_curtainlast', 'M3_curtainlast', 'M4_curtainlast', 'M6_curtainlast'],
+                    # fname_suffix='dm_curtainlast')
 # _plot_curtain_panel(['adv_M0_curtainlast', 'adv_M3_curtainlast', 'adv_M4_curtainlast', 'adv_M6_curtainlast'],
 #                     fname_suffix='adv_curtainlast', use_abs=True)
-_plot_curtain_panel(['evap_M0_curtainlast', 'evap_M3_curtainlast', 'evap_M4_curtainlast', 'evap_M6_curtainlast'],
-                    fname_suffix='evap_curtainlast', use_abs=True)
-_plot_curtain_panel(['sedflux_M0_curtainlast', 'sedflux_M3_curtainlast', 'sedflux_M4_curtainlast', 'sedflux_M6_curtainlast'],
-                    fname_suffix='sedflux_curtainlast', use_abs=True)
-_plot_curtain_panel(['vfall_M0_curtainlast', 'vfall_M3_curtainlast', 'vfall_M4_curtainlast', 'vfall_M6_curtainlast'],
-                    fname_suffix='vfall_curtainlast', use_abs=True, linear=True, zero_thresh=1e-12)
-_plot_curtain_panel(['meanD_03_curtainlast', 'meanD_34_curtainlast', 'meanD_36_curtainlast', 'meanD_06_curtainlast'],
-                    fname_suffix='meanD_curtainlast', zero_thresh=1e-6)
+# _plot_curtain_panel(['evap_M0_curtainlast', 'evap_M3_curtainlast', 'evap_M4_curtainlast', 'evap_M6_curtainlast'],
+#                     fname_suffix='evap_curtainlast', use_abs=True)
+# _plot_curtain_panel(['sedflux_M0_curtainlast', 'sedflux_M3_curtainlast', 'sedflux_M4_curtainlast', 'sedflux_M6_curtainlast'],
+#                     fname_suffix='sedflux_curtainlast', use_abs=True)
+# _plot_curtain_panel(['vfall_M0_curtainlast', 'vfall_M3_curtainlast', 'vfall_M4_curtainlast', 'vfall_M6_curtainlast'],
+#                     fname_suffix='vfall_curtainlast', use_abs=True, linear=True, zero_thresh=1e-12)
+# _plot_curtain_panel(['meanD_03_curtainlast', 'meanD_34_curtainlast', 'meanD_36_curtainlast', 'meanD_06_curtainlast'],
+#                     fname_suffix='meanD_curtainlast', zero_thresh=1e-6)
 
 
 # # comparison between cases
@@ -676,11 +699,9 @@ _plot_curtain_panel(['meanD_03_curtainlast', 'meanD_34_curtainlast', 'meanD_36_c
 
 
 time = nc_dict[target_sim_config]['time']/3600
-color_order = _tab_colors[:_n_total]
-mps = list(train_mps) + [target_mp]
-idx_to_plot = [0, 1]
-mp_labels = list(train_mps) + [target_mp]
-mp_markers = ['o'] * len(train_mps) + ['*']
+# color_order / mp_labels / mp_markers / idx_to_plot are already target_only-aware
+# (set in the "basics" block above); reuse them so this figure matches the others.
+mps = list(mp_labels)
 x = nc_dict[target_sim_config]['x']
 z = nc_dict[target_sim_config]['z']*1e3
 plt.rc('font', size=16)
@@ -688,7 +709,7 @@ cases = vars_strs[0]
 var_na_sens = [
                'M0_dmpath_ss', 'M3_dmpath_ss', 'M4_dmpath_ss', 'M6_dmpath_ss',
                'M0_dspath_ss', 'M3_dspath_ss', 'M4_dspath_ss', 'M6_dspath_ss',
-               'prate_dm_ss', 'prate_ds_ss', 'v_precip_onset', 'precip_frac_ss',
+               # 'prate_dm_ss', 'prate_ds_ss', 'v_precip_onset', 'precip_frac_ss',
                 ] # last 2 hr mean path
 
 
@@ -738,4 +759,4 @@ fig.legend(handles, mp_labels, loc='lower center', bbox_to_anchor=(0.5, -0.08), 
 fig.suptitle("Sensitivity of Domain-Mean Variables on $n_{aero}$", fontsize=20)
 plt.tight_layout()
 
-plt.savefig(f"{plot_dir}{sim_config}_na_sensitivity.png", bbox_inches='tight')
+plt.savefig(f"{plot_dir}{fig_prefix}_na_sensitivity.png", bbox_inches='tight')
