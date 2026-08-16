@@ -35,14 +35,24 @@ def main(camp='dycoms'):
     nikki = 'ppe'
     target_nikki = 'target'
     lwp_threshold = 0.02
+    sting_lvl = 'HI'
+    buffer_size = .5
 
     ppe_basename = [
-                    'fullmp_dycoms_fkbdebug_r0_lhs',
-                    'fullmp_dycoms_fkbdebug_r0_extra_lhs',
-                    # 'fullmp_dycoms_offpolicy_r6_sednewparam2_lhs',
-                    # 'fullmp_dycoms_offpolicy_r6_fixclouddz_lhs',
-                    # 'fullmp_dycoms_r7_pilot_lhs',
-                    # 'fullmp_dycoms_r7_extra_lhs',
+                    # 'fullmp_back2r4_advnu_r2_infl3_dycoms_arviz',
+                    # 'fullmp_back2r4_advnu_r2_infl3_e1_dycoms_arviz',
+                    # 'fullmp_advnu_r2_pilot_dycoms_arviz',
+                    # 'fullmp_advnu_r2_e1_dycoms_arviz',
+                    # 'fullmp_newMCMC_dycoms_arviz',
+                    # 'fullmp_newMCMC_e1_dycoms_arviz',
+                    # 'fullmp_newMCMC_r1_dycoms_arviz',
+                    # 'fullmp_newMCMC_r1_e1_dycoms_arviz',
+                    # 'fullmp_tsdm_ct_r3_dycoms_arviz',
+                    # 'fullmp_tsdm_ct_r3_e1_dycoms_arviz',
+                    # 'fullmp_fix_m3_bias2_r2_dycoms_arviz',
+                    # 'fullmp_fix_m3_bias2_r2_fullcov_dycoms_arviz',
+                    # 'fullmp_fix_m3_bias2_r2_fullcov_e1_dycoms_arviz',
+                    'fullmp_pcs_a0coal63_dycoms_lhs',
                     ]
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
     # sim_config_str is used for joblib paths, plot dirs, and saved-file names
@@ -52,11 +62,11 @@ def main(camp='dycoms'):
         target_sim_config = f'NCE_{camp}_tgt'
         l_pert = False
     else:
-        target_sim_config = f'fullmp_{camp}_tgt_pert_oldcoalkernel'
+        target_sim_config = f'fullmp_tgt_NewCoalKernel_{camp}_pert'
         l_pert = True
 
     if camp == 'rico':
-        steady_state_hrs = 5
+        steady_state_hrs = 8
         min_files = 33
         onset_skip_hrs = 1.5
     elif camp == 'dycoms':
@@ -107,11 +117,15 @@ def main(camp='dycoms'):
     if 'fullmp' in ppe_basename[0]:
         var_interest += [
                          'M6_99th_ss', 'meanD_dm_03_ss', 'v_precip_onset', 'precip_frac_ss',
-                         'prate_dm_ss', 'prate_ds_ss', 'cloud_thickness_dm_ss',
+                         'prate_dm_ss', 'prate_tsdm_ss', 'prate_ds_ss', 'cloud_thickness_dm_ss',
+                         # Rain-rate distribution: exceedance curve (precip_frac_ss is the
+                         # >1e-3 mm/hr point) plus intensity conditioned on raining columns.
+                         # Separates a light-rain coverage deficit from a heavy-rain one.
+                         'precip_frac_lo_ss', 'precip_frac_mid_ss', 'precip_frac_hi_ss', 'prate_cond_dm_ss',
                          'Dtail_dm_ss', 'M6_dmpath_overshoot', 'prate_dm_overshoot','lwp_persist_ss',
-                         'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
+                         # 'sfM0_dm_10m_ss', 'sfM3_dm_10m_ss', 'sfM4_dm_10m_ss', 'sfM6_dm_10m_ss',
                          # 'sfM0_dm_100m_ss', 'sfM3_dm_100m_ss', 'sfM4_dm_100m_ss', 'sfM6_dm_100m_ss',
-                         'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
+                         # 'sfM0_dm_250m_ss', 'sfM3_dm_250m_ss', 'sfM4_dm_250m_ss', 'sfM6_dm_250m_ss',
                          # 'sfM0_dm_500m_ss', 'sfM3_dm_500m_ss', 'sfM4_dm_500m_ss', 'sfM6_dm_500m_ss',
                          # 'M0_dm_10m_ss', 'M3_dm_10m_ss', 'M4_dm_10m_ss', 'M6_dm_10m_ss',
                          # 'M0_dm_100m_ss', 'M3_dm_100m_ss', 'M4_dm_100m_ss', 'M6_dm_100m_ss',
@@ -151,13 +165,18 @@ def main(camp='dycoms'):
     # members with per-member 'sim_config' fields when given a list
     ppe_idx = cl.get_pert_idx(train_file_info)
 
+    ppe_idx = cl.filter_ppe_by_stinginess(
+        ppe_idx, sim_configs, sting_lvl, buffer_size,
+        cl.output_dir, 'ppe', train_mp
+    )
+
     # One joblib per sim_config (mirrors ppe_summary_cm1.py). Each per-config
     # joblib stores nc_dict[sc] directly (NOT wrapped in {sc: ...}).
     client = None
     def _get_client():
         nonlocal client
         if client is None:
-            dask_scratch = os.path.join(os.environ.get('PSCRATCH', '~/tmp'), 'dask-scratch-space')
+            dask_scratch = os.path.join(os.environ.get('PSCRATCH', '/home/arthurhu/tmp'), 'dask-scratch-space')
             client = Client(n_workers=n_workers, threads_per_worker=1, processes=True, local_directory=dask_scratch)
             print(f"Dask dashboard available at: {client.dashboard_link}")
             print(f"Using {n_workers} Processes. Scratch: {dask_scratch}")
@@ -308,15 +327,30 @@ def main(camp='dycoms'):
                 cl.load_cm1_attrs(finfo_target, nc_dict=nc_dict, continuous_ic=False)
             except Exception as e:
                 print(f"Could not load target global attributes (no pert): {e}")
-        # Check if all variables exist
+        # Check if all variables exist. Scan EVERY ic / perturbation, not just the
+        # first one: a variable can be present in first_ic/first_pert but missing in
+        # a later ic or pert, which previously slipped through and KeyError'd when the
+        # data was consumed. Any variable missing from any ic/pert is recomputed below
+        # and merged into the cached joblib (deep_merge preserves already-cached data).
         try:
-            first_ic = "".join(list(itertools.product(*vars_strs))[0])
-            if l_pert:
-                first_pert = list(nc_dict[target_sim_config][target_mp][first_ic].keys())[0]
-                existing_vars = nc_dict[target_sim_config][target_mp][first_ic][first_pert].keys()
-            else:
-                existing_vars = nc_dict[target_sim_config][target_mp][first_ic].keys()
-            vars_to_load = [v for v in var_interest if v not in existing_vars]
+            missing = set()
+            for initcond_combo in itertools.product(*vars_strs):
+                ic = "".join(initcond_combo)
+                try:
+                    ic_dict = nc_dict[target_sim_config][target_mp][ic]
+                except KeyError:
+                    missing.update(var_interest)  # whole ic absent
+                    continue
+                if l_pert:
+                    pert_keys = [k for k in ic_dict.keys() if isinstance(k, int)]
+                    if not pert_keys:
+                        missing.update(var_interest)
+                    for pk in pert_keys:
+                        missing.update(v for v in var_interest if v not in ic_dict[pk])
+                else:
+                    missing.update(v for v in var_interest if v not in ic_dict)
+            # preserve var_interest ordering
+            vars_to_load = [v for v in var_interest if v in missing]
         except (KeyError, IndexError):
             vars_to_load = var_interest
 
@@ -390,10 +424,55 @@ def main(camp='dycoms'):
             na.append(nc_dict[target_sim_config][target_mp][ic_str]['na'])
 
     na = np.array(na)
+
+    # --- Per-member ratio to interpolated target LWP, used as the scatter color in
+    # every panel below (both physical- and transformed-units plots). Interpolated
+    # rather than matched against the nearest target Na case, since PPE members are
+    # continuously sampled in Na and rarely land exactly on a target case.
+    LWP_VAR = 'M3_dmpath_ss'
+    tgt_lwp_mean = []
+    for initcond_combo in itertools.product(*vars_strs):
+        ic_str = "".join(initcond_combo)
+        if l_pert:
+            _ic_vals = [nc_dict[target_sim_config][target_mp][ic_str][ipert['global_id']][LWP_VAR]['value']
+                       for ipert in target_pert_idx
+                       if ipert['global_id'] in nc_dict[target_sim_config][target_mp][ic_str]]
+            tgt_lwp_mean.append(np.mean(_ic_vals))
+        else:
+            tgt_lwp_mean.append(nc_dict[target_sim_config][target_mp][ic_str][LWP_VAR]['value'])
+    tgt_lwp_mean = np.asarray(tgt_lwp_mean, dtype=float)
+    _sort_idx = np.argsort(na)
+    _na_sorted = na[_sort_idx]
+    _tgt_lwp_sorted = tgt_lwp_mean[_sort_idx]
+
+    lwp_ratio_by_gid = {}
+    for ippe in ppe_idx:
+        sc = ippe['sim_config']
+        gid = ippe['global_id']
+        member_rec = nc_dict.get(sc, {}).get(train_mp, {}).get('cic', {}).get(gid)
+        if member_rec is None or LWP_VAR not in member_rec:
+            continue
+        member_lwp = member_rec[LWP_VAR]['value']
+        tgt_lwp_here = np.interp(member_rec['na'], _na_sorted, _tgt_lwp_sorted)
+        lwp_ratio_by_gid[gid] = member_lwp / tgt_lwp_here if tgt_lwp_here != 0 else np.nan
+
+    _ratio_vals = np.array([v for v in lwp_ratio_by_gid.values() if np.isfinite(v)])
+    if _ratio_vals.size:
+        _ratio_min, _ratio_max = float(_ratio_vals.min()), float(_ratio_vals.max())
+    else:
+        _ratio_min, _ratio_max = 0.5, 1.5
+    # TwoSlopeNorm requires vmin < vcenter(=1) < vmax; nudge degenerate/one-sided ranges.
+    _ratio_min = min(_ratio_min, 0.999)
+    _ratio_max = max(_ratio_max, 1.001)
+    lwp_ratio_norm = mcolors.TwoSlopeNorm(vmin=_ratio_min, vcenter=1.0, vmax=_ratio_max)
+    lwp_ratio_cmap = 'RdBu_r'
+    lwp_ratio_label = f'PPE {LWP_VAR} / target {LWP_VAR} (interpolated at member Na)'
+
     tolerance = 3
     mask_post = None
     for var_interest_blk, block_name in zip(var_interest_blks, block_names):
-        fig, axs = plt.subplots(7, 4, figsize=(12, 12), sharex=True)
+        _nrow = int(np.ceil(len(var_interest_blk) / 4))
+        fig, axs = plt.subplots(_nrow, 4, figsize=(12, 2.4 * _nrow), sharex=True)
         axs = axs.flatten()
         for ivar, var_name in enumerate(var_interest_blk):
             tgt_data = []
@@ -411,11 +490,13 @@ def main(camp='dycoms'):
                 else:
                     tgt_data.append(nc_dict[target_sim_config][target_mp][ic_str][var_name]['value'])
 
+            train_gids = []
             for ippe in ppe_idx:
                 sc = ippe['sim_config']  # each member knows its own config
                 if ippe['global_id'] in nc_dict[sc][train_mp]['cic']:
                     train_data.append(nc_dict[sc][train_mp]['cic'][ippe['global_id']][var_name]['value'])
                     na_train.append(nc_dict[sc][train_mp]['cic'][ippe['global_id']]['na'])
+                    train_gids.append(ippe['global_id'])
                 else:
                     print(ippe['global_id'])
 
@@ -443,7 +524,10 @@ def main(camp='dycoms'):
                 axs[ivar].plot(na, tgt_data, label=ic_str, linewidth=2, marker='o', alpha=0.5, color='tab:orange')
 
             if len(train_data) > 0:
-                axs[ivar].scatter(na_train, train_data, label='Train PPE', s=5, color='tab:blue')
+                train_colors = np.array([lwp_ratio_by_gid.get(g, np.nan) for g in train_gids])
+                axs[ivar].scatter(na_train, train_data, label='Train PPE', s=8,
+                                  c=train_colors, cmap=lwp_ratio_cmap, norm=lwp_ratio_norm,
+                                  edgecolors='black', linewidths=0.3)
 
                 # axs[ivar].scatter(na_train[mask], train_data[mask], label='Train In Bounds', s=20, color='tab:pink', marker='*')
 
@@ -479,6 +563,8 @@ def main(camp='dycoms'):
             # if ivar == 4 or ivar == 5:
             #     axs[ivar].set_ylim([1e-8, 1e-1])
 
+        sm = plt.cm.ScalarMappable(cmap=lwp_ratio_cmap, norm=lwp_ratio_norm)
+        fig.colorbar(sm, ax=axs.tolist(), shrink=0.6, label=lwp_ratio_label)
         plt.savefig(f"{plot_dir}{sim_config_str}_{block_name}.png")
 
     # --- Summary plot in transformed space ---
@@ -503,7 +589,8 @@ def main(camp='dycoms'):
         finite = ppe_pos_vals[np.isfinite(ppe_pos_vals)]
         return np.nanpercentile(finite, 10) if finite.size else 1.0
 
-    fig, axs = plt.subplots(7, 4, figsize=(12, 12), sharex=True)
+    _nrow = int(np.ceil(len(var_interest_blk1) / 4))
+    fig, axs = plt.subplots(_nrow, 4, figsize=(12, 2.4 * _nrow), sharex=True)
     axs = axs.flatten()
     for ivar, var_name in enumerate(var_interest_blk1):
         tgt_data = []
@@ -520,11 +607,13 @@ def main(camp='dycoms'):
                     tgt_data.append(ic_data)
             else:
                 tgt_data.append(nc_dict[target_sim_config][target_mp][ic_str][var_name]['value'])
+        train_gids = []
         for ippe in ppe_idx:
             sc = ippe['sim_config']
             if ippe['global_id'] in nc_dict[sc][train_mp]['cic']:
                 train_data.append(nc_dict[sc][train_mp]['cic'][ippe['global_id']][var_name]['value'])
                 na_train.append(nc_dict[sc][train_mp]['cic'][ippe['global_id']]['na'])
+                train_gids.append(ippe['global_id'])
 
         tgt_data = np.array(tgt_data)
         expected_ndim = 2 if l_pert else 1
@@ -568,7 +657,10 @@ def main(camp='dycoms'):
             axs[ivar].plot(na, tgt_scaled, label=ic_str, linewidth=2, marker='o', alpha=0.5, color='tab:orange')
 
         if len(train_scaled) > 0:
-            axs[ivar].scatter(na_train, train_scaled, label='Train PPE', s=5, color='tab:blue')
+            train_colors = np.array([lwp_ratio_by_gid.get(g, np.nan) for g in train_gids])
+            axs[ivar].scatter(na_train, train_scaled, label='Train PPE', s=8,
+                              c=train_colors, cmap=lwp_ratio_cmap, norm=lwp_ratio_norm,
+                              edgecolors='black', linewidths=0.3)
 
         if transform_method == 'std':
             label_t = 'standard only'
@@ -583,6 +675,8 @@ def main(camp='dycoms'):
         axs[ivar].set_ylabel('standardized')
 
     plt.tight_layout()
+    sm = plt.cm.ScalarMappable(cmap=lwp_ratio_cmap, norm=lwp_ratio_norm)
+    fig.colorbar(sm, ax=axs.tolist(), shrink=0.6, label=lwp_ratio_label)
     plt.savefig(f"{plot_dir}{sim_config_str}_summary_transformed.pdf")
 
 

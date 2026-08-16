@@ -26,6 +26,7 @@ def _open_last_valid(file_paths, mode='r'):
 # Repopulate this tuple temporarily after changing how a cached var is computed
 # (e.g. ('v_precip_onset',)) so a single run sweeps the live caches, then clear.
 INVALIDATE_VARS = ()
+# INVALIDATE_VARS = ('v_precip_onset','precip_frac_ss')
 
 def invalidate_stale_vars(payload, vars_to_drop=INVALIDATE_VARS):
     """Recursively walk a cache dict and pop entries named in vars_to_drop
@@ -41,7 +42,7 @@ def invalidate_stale_vars(payload, vars_to_drop=INVALIDATE_VARS):
             invalidate_stale_vars(v, vars_to_drop)
     return payload
 
-def _diagnose_precip_onset(file_paths, dt, skip_hrs, threshold_mmhr=1e-4):
+def _diagnose_precip_onset(file_paths, dt, skip_hrs, threshold_mmhr=1e-5):
     """Walk files in order starting after skip_hrs; return the first time
     (in hours) at which the raw domain-mean surface prate exceeds the
     threshold (mm/hr). Returns np.nan if onset is never detected.
@@ -259,10 +260,13 @@ output_var_set = {
                   'v_curtain_slice': {'var_source': 'vinterp', 'var_unit': 'm/s', 'longname': 'Horizontal Wind (y) Curtain Slice'},
                   'w_curtain_slice': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind (z) Curtain Slice'},
                   'w': {'var_source': 'winterp', 'var_unit': 'm/s', 'longname': 'Vertical Wind (z)'},
-                  'prate_dm': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'Domain-Mean Rain Rate'},
+                  'prate_dm': {'var_source': 'prate', 'var_unit': 'mm/day', 'scale': 3600*24, 'longname': 'Domain-Mean Rain Rate'},
+                  'prate_ds': {'var_source': 'prate', 'var_unit': 'mm/day', 'scale': 3600*24, 'longname': 'Domain-Std Rain Rate'},
                   'prate_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS Rain Rate'},
                   'prate_dm_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS DM Rain Rate'},
+                  'prate_dme_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS Domain-Median Rain Rate'},
                   'prate_ds_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS DS Rain Rate'},
+                  'prate_tsdm_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS Temporal-STD of DM Rain Rate'},
                   'cloud_thickness_dm_ss': {'var_source': 'qc3', 'var_unit': 'm', 'longname': 'SS DM cloud thickness'},
                   'M6_99th_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'SS M6 99th percentile', 'lwc_threshold': 1e-5},
                   'M6_ds_ss': {'var_source': 'qc6', 'var_unit': '$m^6$/kg', 'scale': 1e-4**6, 'longname': 'SS M6 Standard Deviation', 'lwc_threshold': 1e-5},
@@ -280,6 +284,7 @@ output_var_set = {
                   'KX_99th_ss': {'var_source': ['qc0', 'qc3', 'qc4'], 'var_unit': '-', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud 99th pct KX'},
                   'prate_10th_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS 10th percentile Rain Rate'},
                   'prate_90th_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS 90th percentile Rain Rate'},
+                  'prate_99th_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'longname': 'SS 99th percentile Rain Rate'},
                   'sedflux_m0': {'var_source': 'sedflux_M0', 'var_unit': '1/$m^2$/s', 'longname': 'Sedflux M0'},
                   'sedflux_m3': {'var_source': 'sedflux_M3', 'var_unit': 'mm/hr', 'scale': M3toQ*3600, 'longname': 'Rain flux'},
                   'sedflux_m4': {'var_source': 'sedflux_M4', 'var_unit': '$m^4$/$m^2$/s', 'scale': 1e-4**4, 'longname': 'Sedflux M4'},
@@ -441,10 +446,19 @@ output_var_set = {
                   # LWP is already given as an input so no var_source is needed
                   'decorr_length_ss': {'var_source': [], 'var_unit': 'm', 'longname': 'Decorrelation Length (m)'}, 
                   'precip_frac_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'longname': 'Rain Area Fraction'},
+                  # Rain-rate exceedance curve. precip_frac_ss above is the >1e-3 mm/hr
+                  # point; these add three more. Bulk schemes matching bin at 'hi' while
+                  # undershooting at 'lo' is a direct light-rain coverage deficit.
+                  'precip_frac_lo_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'precip_frac_thr': 1e-2, 'longname': 'Rain Area Frac >0.01 mm/hr'},
+                  'precip_frac_mid_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'precip_frac_thr': 1e-1, 'longname': 'Rain Area Frac >0.1 mm/hr'},
+                  'precip_frac_hi_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'precip_frac_thr': 1.0, 'longname': 'Rain Area Frac >1 mm/hr'},
+                  # Rain intensity conditioned on raining columns only. prate_dm_ss averages
+                  # over the LWP-union gate instead, so it mixes intensity with coverage.
+                  'prate_cond_dm_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'prate_threshold': 1e-3, 'longname': 'SS Rain Rate | Raining'},
                   # DSD tail-shape constraint: in-cloud mean tail diameter (M6/M4)^(1/2)
                   # in microns. Isolates the M6 tail relative to M4 (the highest matched
                   # moment), the exact axis of the "M6 high, M4 fine" bias.
-                  'Dtail_dm_ss': {'var_source': ['qc4', 'qc6'], 'var_unit': 'μm', 'lwc_threshold': 1e-5, 'longname': 'SS in-cloud tail diameter (M6/M4)^0.5'},
+                  'Dtail_dm_ss': {'var_source': ['qc4', 'qc6'], 'var_unit': 'μm', 'lwc_threshold': 1e-5, 'longname': 'SS tail diameter (M6/M4)^0.5'},
                   # Transient diagnostics (full-run scan; see _diagnose_run_transients):
                   # overshoot = peak/steady (penalizes early spike-then-decay),
                   # persistence = steady/peak LWP (penalizes rain-out collapse).
@@ -838,8 +852,8 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     n_needed = min(n_needed, len(file_paths))
     files_to_use = file_paths[-n_needed:]
 
-    # Diagnose rain onset by scanning files from `onset_skip_hrs` onward
-    # (early window discarded to avoid spin-up rebalancing rain).
+    # Diagnose rain onset: first time after `onset_skip_hrs` that the domain-mean
+    # prate exceeds a fixed threshold (mm/hr).
     needs_onset = any(v in var_interest for v in ('v_precip_onset', 't_precip_onset'))
     if needs_onset:
         t_onset_hr = _diagnose_precip_onset(
@@ -890,6 +904,10 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
     var_meta = {vn: parse_var_meta(vn) for vn in var_interest}
     raw_collector = {vn: [] for vn in var_interest}
     lwp_pcts = np.zeros(len(files_to_use))
+    # Peak surface rain rate anywhere in the SS window. Exactly zero means the
+    # member never rains, so its rain statistics are undefined rather than
+    # legitimately zero (see the rain_free branch in the aggregation loop).
+    prate_max = 0.0
 
     # Main single-pass loop over the SS window only.
     # The full-sim `time` vector is computed arithmetically above, so we no
@@ -900,6 +918,8 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
             rho = calc_rho(ds)
             lwp = calc_lwp(ds, dz, rho=rho)
             lwp_pcts[ifp] = np.mean(lwp > lwp_threshold) * 100
+            if 'prate' in ds.variables:
+                prate_max = max(prate_max, float(np.max(ds.variables['prate'][...])))
 
             for vn in var_interest:
                 # Onset vars and transient diagnostics are diagnosed via
@@ -944,6 +964,7 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
             )
 
     # Final aggregation and assignment
+    rain_free = (prate_max == 0.0)
     for vn in var_interest:
         dst = nc_dict[fsim_config][mp][ic_str][global_id] if (continuous_ic or l_pert) else nc_dict[fsim_config][mp][ic_str]
         dst.setdefault(vn, {})
@@ -987,19 +1008,26 @@ def parse_var_meta(var_name):
     is_prc  = bool(re_prc)
     nth_prctl  = int(re_prc.group(1)) if is_prc else None
 
-    # is domain mean/std (spatial mean/std)
-    is_dm   = bool(re.search(r'_dm', var_name))
+    # is domain mean/median/std (spatial mean/median/std). '_dme' (domain median)
+    # would otherwise also match the '_dm' substring, so is_dm excludes it.
+    is_dme  = bool(re.search(r'_dme', var_name))
+    is_dm   = bool(re.search(r'_dm(?!e)', var_name))
     is_ds   = bool(re.search(r'_ds', var_name))
+
+    # is temporal std of the domain mean (over the SS window)
+    is_tsdm = bool(re.search(r'_tsdm', var_name))
 
     # is SS (temporal mean of the last x hr)
     is_ss   = bool(re.search(r'_ss', var_name))
 
-    return {'is_prc': is_prc, 'nth_prctl': nth_prctl, 'is_dm': is_dm, 'is_ds': is_ds, 'is_ss': is_ss}
+    return {'is_prc': is_prc, 'nth_prctl': nth_prctl, 'is_dm': is_dm, 'is_dme': is_dme,
+            'is_ds': is_ds, 'is_tsdm': is_tsdm, 'is_ss': is_ss}
 
 def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
     vsource = output_var_set[var_name]['var_source']
     scale = output_var_set[var_name].get('scale', 1.0)
     lwc_thresh = output_var_set[var_name].get('lwc_threshold')
+    prate_thresh = output_var_set[var_name].get('prate_threshold')
 
     # Raise KeyError early if any source variable is absent from this file
     # (allows callers to silently skip variables not produced by this MP scheme).
@@ -1022,6 +1050,14 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
             lwc = ds.variables['qc3'][:] * M3toQ
             mask = lwc <= lwc_thresh
             data[mask] = np.nan
+        elif prate_thresh is not None:
+            # Mask on surface rain rate (mm/hr): keep only raining columns. Decouples
+            # rain intensity from rain coverage, which the default LWP-union gate below
+            # conflates (thick non-raining columns pass on the LWP leg and dilute the
+            # mean with prate ~ 0).
+            mask = ds.variables['prate'][0, ...]*3600 <= prate_thresh
+            if data.ndim >= 2:
+                data[..., mask] = np.nan
         else:
             # Mask based on column LWP
             lwp_mask = lwp <= lwp_threshold
@@ -1131,7 +1167,11 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
             else:
                 res = lags[idx]
         elif 'precip_frac' in var_name:
-            res = np.mean(raw_data * scale > 1e-4) # mm/hr
+            # Exceedance threshold in mm/hr; defaults to the original 1e-3. Several
+            # thresholds together trace the rain-rate exceedance curve, separating a
+            # light-rain coverage deficit from a heavy-rain one.
+            thr = output_var_set[var_name].get('precip_frac_thr', 1e-3)
+            res = np.mean(raw_data * scale > thr)
         elif 'cloud_thickness' in var_name:
             # qc3 (3rd moment) is mass-equivalent after *M3toQ (kg/kg). In SLC everything
             # is "cloud", so qc3 already includes rain/drizzle 3rd-moment contributions.
@@ -1202,6 +1242,10 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
                 res = np.mean(valid)
         elif 'pressure' in var_name:
             res = raw_data
+        elif prate_thresh is not None:
+            # Must use the masked array: the default below reads raw_data, so a
+            # prate_threshold entry would otherwise be silently ignored.
+            res = data.squeeze() * scale
         else:
             res = raw_data.squeeze() * scale
 
@@ -1282,11 +1326,29 @@ def aggregate_timeseries(var_name, ts, meta):
             return np.nanmean(last, axis=1)
 
         arr = np.squeeze(np.stack(ts))
+        # netCDF reads come back as MaskedArrays. A fully-masked reduction below
+        # returns the read-only np.ma.masked singleton, which np.nanmean then
+        # tries to write into ("output array is read-only"). Drop to plain nan.
+        if isinstance(arr, np.ma.MaskedArray):
+            arr = arr.filled(np.nan)
 
+        if meta['is_tsdm']:
+            # temporal std of the domain-mean value over the SS window: spatial
+            # mean per SS-window timestep first, then std across those timesteps.
+            dm_series = np.nanmean(arr, axis=(-2, -1))
+            return np.nanstd(dm_series, axis=0)
 
         if meta['is_ds']:
-            # is domain std — mean over last two spatial dims (y, x)
+            # is domain std — normalized by the domain mean (coefficient of
+            # variation). Zero domain mean (e.g. a member that never rains)
+            # gives nan, which nan_to_num below turns into 0.
+            # mean_xy = np.nanmean(arr, axis=(-2, -1))
+            # arr = np.nanstd(arr, axis=(-2, -1)) / np.where(mean_xy == 0, np.nan, mean_xy)
             arr = np.nanstd(arr, axis=(-2, -1))
+
+        if meta['is_dme']:
+            # is domain median — median over last two spatial dims (y, x)
+            arr = np.nanmedian(arr, axis=(-2, -1))
 
         if meta['is_dm']:
             # is domain mean — mean over last two spatial dims (y, x)
