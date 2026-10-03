@@ -1,5 +1,6 @@
 import os
 import re
+import itertools
 import numpy as np
 import netCDF4 as nc
 
@@ -452,6 +453,15 @@ output_var_set = {
                   'precip_frac_lo_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'precip_frac_thr': 1e-2, 'longname': 'Rain Area Frac >0.01 mm/hr'},
                   'precip_frac_mid_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'precip_frac_thr': 1e-1, 'longname': 'Rain Area Frac >0.1 mm/hr'},
                   'precip_frac_hi_ss': {'var_source': 'prate', 'var_unit': '', 'scale': 3600, 'precip_frac_thr': 1.0, 'longname': 'Rain Area Frac >1 mm/hr'},
+                  # Cloud cover: fraction of columns with LWP above a threshold (g/m^2).
+                  # LWP is already given as an input so no var_source is needed.
+                  'cloud_cover_10_ss': {'var_source': [], 'var_unit': '', 'cloud_cover_thr': 10., 'longname': 'Cloud Cover LWP >10 g/m$^2$'},
+                  'cloud_cover_30_ss': {'var_source': [], 'var_unit': '', 'cloud_cover_thr': 30., 'longname': 'Cloud Cover LWP >30 g/m$^2$'},
+                  'cloud_cover_50_ss': {'var_source': [], 'var_unit': '', 'cloud_cover_thr': 50., 'longname': 'Cloud Cover LWP >50 g/m$^2$'},
+                  # Time series of the above (one value per output time, no SS averaging)
+                  'cloud_cover_10': {'var_source': [], 'var_unit': '', 'cloud_cover_thr': 10., 'longname': 'Cloud Cover LWP >10 g/m$^2$'},
+                  'cloud_cover_30': {'var_source': [], 'var_unit': '', 'cloud_cover_thr': 30., 'longname': 'Cloud Cover LWP >30 g/m$^2$'},
+                  'cloud_cover_50': {'var_source': [], 'var_unit': '', 'cloud_cover_thr': 50., 'longname': 'Cloud Cover LWP >50 g/m$^2$'},
                   # Rain intensity conditioned on raining columns only. prate_dm_ss averages
                   # over the LWP-union gate instead, so it mixes intensity with coverage.
                   'prate_cond_dm_ss': {'var_source': 'prate', 'var_unit': 'mm/hr', 'scale': 3600, 'prate_threshold': 1e-3, 'longname': 'SS Rain Rate | Raining'},
@@ -466,6 +476,247 @@ output_var_set = {
                   'prate_dm_overshoot': {'var_source': 'prate', 'var_unit': '-', 'longname': 'Rain rate peak/steady overshoot'},
                   'lwp_persist_ss': {'var_source': 'qc3', 'var_unit': '-', 'longname': 'LWP steady/peak persistence'},
                   }
+
+
+# ---------------------------------------------------------------------------
+# Target-band filter
+#
+# Shared by ppe_summary_cm1.py (which drops out-of-band members from the
+# summary NetCDF) and cm1_ppe.py (which fades them in the diagnostic plots).
+# The band at each sampled initial condition is [min, max] of the target across
+# its realizations - the light-orange fill_between in cm1_ppe.py - widened
+# multiplicatively by a ratio applied symmetrically, so r and 1/r describe the
+# same band (0.5 == 2.0). A ratio of 0 disables the filter, 1 uses the raw band.
+# ---------------------------------------------------------------------------
+
+def canonical_band_ratio(ratio):
+    """Fold a widening ratio onto (0, 1]. Returns 0.0 when the filter is off."""
+    r = float(ratio)
+    if r < 0:
+        raise ValueError(f"band filter ratio must be >= 0, got {r}")
+    if r == 0:
+        return 0.0
+    return min(r, 1.0 / r)
+
+
+def loglog_interp(x, xp, fp):
+    """Interpolate fp(xp) at x in log-log space.
+
+    Falls back to plain linear interpolation if any abscissa or ordinate is
+    non-positive (log is undefined there). Values outside [min(xp), max(xp)]
+    clamp to the end points, same as np.interp.
+    """
+    x = np.asarray(x, dtype=float)
+    xp = np.asarray(xp, dtype=float)
+    fp = np.asarray(fp, dtype=float)
+    order = np.argsort(xp)
+    xp, fp = xp[order], fp[order]
+    if np.all(xp > 0) and np.all(fp > 0) and np.all(x > 0):
+        return np.exp(np.interp(np.log(x), np.log(xp), np.log(fp)))
+    return np.interp(x, xp, fp)
+
+
+def widen_band_edge(v, r, side):
+    """Push a band edge outward by a factor 1/r, sign-aware (0 < r <= 1).
+
+    For a positive edge the low side scales by r and the high side by 1/r; the
+    signs flip for a negative edge so the band always widens.
+    """
+    if r <= 0:
+        return v
+    if side == 'low':
+        return v * r if v > 0 else v / r
+    return v / r if v > 0 else v * r
+
+
+def _scalarize_band_value(vals, var_name, context):
+    """Collapse a stack of per-realization values to a 1-D array of scalars.
+
+    Mirrors the extra-axis averaging in cm1_ppe.py: the band filter only makes
+    sense for scalar diagnostics, so anything carrying trailing time/level axes
+    is averaged over them with a warning.
+    """
+    arr = np.asarray(vals, dtype=float)
+    if arr.ndim > 1:
+        extra_axes = tuple(range(1, arr.ndim))
+        print(f"  [band filter warn] {var_name}: averaging {context} over axes "
+              f"{extra_axes} (shape {arr.shape} -> 1-D)")
+        arr = np.nanmean(arr, axis=extra_axes)
+    return arr
+
+
+def target_band_edges(nc_dict, vars_strs, target_sim_config, target_mp, l_pert,
+                      filter_var, filter_ratio, init_vn='na'):
+    """Build the widened target band as a function of the initial condition.
+
+    Returns (ic_vals, lo_widened, hi_widened) sorted by ic_vals, or None when
+    the filter is disabled (no filter_var, or ratio 0).
+    """
+    if not filter_var or not filter_ratio:
+        return None
+    r = canonical_band_ratio(filter_ratio)
+
+    ic_vals, band_lo, band_hi = [], [], []
+    for combo in itertools.product(*vars_strs):
+        ic_str = "".join(combo)
+        node = nc_dict[target_sim_config][target_mp][ic_str]
+        if l_pert:
+            pert_ids = [k for k in node.keys() if isinstance(k, int)]
+            if not pert_ids:
+                continue
+            vals = _scalarize_band_value(
+                [node[pid][filter_var]['value'] for pid in pert_ids],
+                filter_var, f'target {ic_str}')
+            ic_vals.append(node[pert_ids[0]][init_vn])
+        else:
+            vals = _scalarize_band_value([node[filter_var]['value']],
+                                         filter_var, f'target {ic_str}')
+            ic_vals.append(node[init_vn])
+        if np.all(np.isnan(vals)):
+            raise ValueError(f"Target {filter_var} is all-NaN at {ic_str}")
+        band_lo.append(np.nanmin(vals))
+        band_hi.append(np.nanmax(vals))
+
+    ic_vals = np.asarray(ic_vals, dtype=float)
+    if ic_vals.size == 0:
+        raise ValueError(f"No target samples found for band filter on {filter_var}")
+    lo_w = np.array([widen_band_edge(v, r, 'low') for v in band_lo])
+    hi_w = np.array([widen_band_edge(v, r, 'high') for v in band_hi])
+
+    order = np.argsort(ic_vals)
+    return ic_vals[order], lo_w[order], hi_w[order]
+
+
+def band_bounds_at(ic, edges):
+    """Interpolate (lo, hi) band edges at initial condition(s) `ic`."""
+    ic_vals, lo_w, hi_w = edges
+    if ic_vals.size < 2:
+        lo = np.full(np.shape(ic), lo_w[0], dtype=float)
+        hi = np.full(np.shape(ic), hi_w[0], dtype=float)
+        return lo, hi
+    return loglog_interp(ic, ic_vals, lo_w), loglog_interp(ic, ic_vals, hi_w)
+
+
+def band_filter_mask(ic, vals, edges):
+    """Boolean mask: True where `vals` sits inside the band at `ic`.
+
+    Non-finite values are always False. Returns all-True when edges is None.
+    """
+    vals = np.asarray(vals, dtype=float)
+    if edges is None:
+        return np.ones(vals.shape, dtype=bool)
+    lo, hi = band_bounds_at(np.asarray(ic, dtype=float), edges)
+    with np.errstate(invalid='ignore'):
+        return np.isfinite(vals) & (vals >= lo) & (vals <= hi)
+
+
+
+def member_key(sim_config, global_id, camp):
+    """Campaign-independent identity for a PPE member.
+
+    The DYCOMS and RICO ensembles are the same LHS design run under two
+    forcings, so member N of `..._dycoms_lhs` and member N of `..._rico_lhs`
+    carry identical params.csv. Replacing the camp token yields a key that
+    joins the two campaigns.
+    """
+    token = f'_{camp}_'
+    if token in sim_config:
+        base = sim_config.replace(token, '_<CAMP>_')
+    else:
+        base = sim_config.replace(camp, '<CAMP>')
+    return (base, global_id)
+
+
+def band_keep_keys(nc_dict, ppe_idx, vars_strs, target_sim_config, target_mp,
+                   train_mp, l_pert, camp, filter_var, filter_ratio,
+                   init_vn='na'):
+    """Campaign-independent keys of the members that pass the band filter.
+
+    Returns (keep_keys, all_keys). Members missing from the cache or carrying a
+    non-finite filter_var never land in keep_keys.
+    """
+    edges = target_band_edges(nc_dict, vars_strs, target_sim_config, target_mp,
+                              l_pert, filter_var, filter_ratio, init_vn=init_vn)
+    keep, seen = set(), set()
+    for ip in ppe_idx:
+        sc = ip['sim_config'] if isinstance(ip, dict) else None
+        gid = ip['global_id'] if isinstance(ip, dict) else int(ip)
+        key = member_key(sc, gid, camp)
+        seen.add(key)
+        rec = nc_dict.get(sc, {}).get(train_mp, {}).get('cic', {}).get(gid)
+        if rec is None or filter_var not in rec:
+            continue
+        val = _scalarize_band_value([rec[filter_var]['value']], filter_var,
+                                    f'member {sc}/{gid}')[0]
+        if not np.isfinite(val):
+            continue
+        if edges is None or bool(band_filter_mask(float(rec[init_vn]), val, edges)):
+            keep.add(key)
+    return keep, seen
+
+
+def band_filter_tag(filter_var, filter_ratio):
+    """Filename tag for an active band filter ('' when disabled).
+
+    Uses the canonical (<= 1) ratio so 0.5 and 2.0 map to the same name.
+    """
+    if not filter_var or not filter_ratio:
+        return ''
+    return f"_filt{filter_var}_r{canonical_band_ratio(filter_ratio):.2g}"
+
+
+def apply_target_band_filter(nc_dict, ppe_idx, vars_strs, var_interest,
+                             target_sim_config, target_mp, train_mp, l_pert,
+                             sim_configs, filter_var=None, filter_ratio=0.0,
+                             init_vn='na'):
+    """Keep only PPE members inside the widened target band of `filter_var`.
+
+    Returns (filtered_ppe_idx, filename_tag). The tag is '' when no filter ran.
+    """
+    if not filter_var or not filter_ratio:
+        return ppe_idx, ''
+    if filter_var not in var_interest:
+        raise ValueError(
+            f"band filter var '{filter_var}' is not in var_interest; it must be "
+            "one of the loaded constraint variables."
+        )
+    r = canonical_band_ratio(filter_ratio)
+    edges = target_band_edges(nc_dict, vars_strs, target_sim_config, target_mp,
+                              l_pert, filter_var, filter_ratio, init_vn=init_vn)
+    if edges[0].size < 2:
+        print(f"[band filter] only {edges[0].size} target {init_vn} sample(s); "
+              "the band is applied without interpolation.")
+
+    kept, n_nan, n_missing = [], 0, 0
+    for ppe_item in ppe_idx:
+        if isinstance(ppe_item, dict):
+            gid, sc = ppe_item['global_id'], ppe_item['sim_config']
+        else:
+            gid = int(ppe_item)
+            sc = sim_configs[0] if isinstance(sim_configs, list) else sim_configs
+        try:
+            member = nc_dict[sc][train_mp]['cic'][gid]
+            val = _scalarize_band_value([member[filter_var]['value']],
+                                        filter_var, f'member {sc}/{gid}')[0]
+            ic_m = float(member[init_vn])
+        except (KeyError, TypeError, IndexError):
+            n_missing += 1
+            continue
+        if not np.isfinite(val):
+            n_nan += 1
+            continue
+        if bool(band_filter_mask(ic_m, val, edges)):
+            kept.append(ppe_item)
+
+    print(f"\n[band filter] {filter_var} within target band widened by ratio "
+          f"{filter_ratio} (effective factor {r:g} / {1.0 / r:g}), "
+          f"interpolated over {init_vn}")
+    print(f"[band filter] kept {len(kept)}/{len(ppe_idx)} members "
+          f"(dropped {n_nan} NaN, {n_missing} missing, "
+          f"{len(ppe_idx) - len(kept) - n_nan - n_missing} out of band)")
+
+    return kept, band_filter_tag(filter_var, filter_ratio)
+
 
 def get_pert_idx(file_info):
     fdate = file_info['date']
@@ -917,7 +1168,7 @@ def load_cm1(file_info, var_interest, ss_hrs, nc_dict=None, continuous_ic=True, 
             # Physics helpers
             rho = calc_rho(ds)
             lwp = calc_lwp(ds, dz, rho=rho)
-            lwp_pcts[ifp] = np.mean(lwp > lwp_threshold) * 100
+            lwp_pcts[ifp] = np.mean(lwp >= lwp_threshold) * 100
             if 'prate' in ds.variables:
                 prate_max = max(prate_max, float(np.max(ds.variables['prate'][...])))
 
@@ -1060,7 +1311,7 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
                 data[..., mask] = np.nan
         else:
             # Mask based on column LWP
-            lwp_mask = lwp <= lwp_threshold
+            lwp_mask = lwp < lwp_threshold
             rain_mask = ds.variables['prate'][0, ...]*3600 <= 1e-5
             mask = lwp_mask & rain_mask
             if data.ndim >= 2:
@@ -1172,6 +1423,10 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
             # light-rain coverage deficit from a heavy-rain one.
             thr = output_var_set[var_name].get('precip_frac_thr', 1e-3)
             res = np.mean(raw_data * scale > thr)
+        elif 'cloud_cover' in var_name:
+            # lwp is (ny, nx) in kg/m^2; threshold is in g/m^2
+            thr = output_var_set[var_name]['cloud_cover_thr']
+            res = np.mean(np.asarray(lwp) * 1e3 > thr)
         elif 'cloud_thickness' in var_name:
             # qc3 (3rd moment) is mass-equivalent after *M3toQ (kg/kg). In SLC everything
             # is "cloud", so qc3 already includes rain/drizzle 3rd-moment contributions.
@@ -1184,7 +1439,7 @@ def extract_and_reduce(var_name, ds, rho, lwp, dz, z, dx, lwp_threshold):
             base_idx = np.argmax(cm, axis=0)
             thickness = (z[top_idx] - z[base_idx]).astype(np.float64)  # (ny, nx)
             # Same column gate as other *_dm_ss vars
-            lwp_mask = lwp > lwp_threshold
+            lwp_mask = lwp >= lwp_threshold
             rain_mask = ds.variables['prate'][0, ...] * 3600 > 1e-5
             column_gate = lwp_mask | rain_mask
             valid = column_gate & cm.any(axis=0)
