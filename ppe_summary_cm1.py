@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 PPE summary processing script
 Note that some hard-coded variables are used in this script.
@@ -28,6 +29,8 @@ import platform
 hostname = socket.gethostname()
 if hostname == "simurgh":
     n_workers = 32
+elif "nid" in hostname:
+    n_workers = 128
 else:
     n_workers = 8
 
@@ -45,9 +48,41 @@ os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
 # LOW: LOW includes only samples within the bound of the most recent PPE (last entry of the ppe_basename)
 # MID: MID is somewhere in between, including all samples with parameters within the range of the 
 # most recent PPE plus a buffer size.
-sting_lvl = 'HI'
-buffer_size = 2
+sting_lvl = 'MID'
+buffer_size = 1.
 l_dry_run = False
+
+# Optional target-band filter.
+# Keeps only PPE members whose FILTER_VAR value falls inside the target's
+# spread across realizations (the light-orange band in cm1_ppe.py), evaluated
+# at that member's own initial condition (Na) and widened multiplicatively by
+# FILTER_RATIO:
+#   FILTER_RATIO = 0    -> filter disabled
+#   FILTER_RATIO = 1    -> strictly inside the target min/max band
+#   FILTER_RATIO = 0.5  -> [0.5 * band_low, 2.0 * band_high]
+# The ratio is applied symmetrically, so r and 1/r mean the same thing
+# (0.5 == 2.0). Set FILTER_VAR = None to disable.
+# The target is only sampled at discrete Na, so the band edges are interpolated
+# in log-log space onto each member's continuous Na. Members whose FILTER_VAR
+# value is NaN (early-error runs) are dropped.
+FILTER_VAR = 'M3_dmpath_ss'
+FILTER_RATIO = 0.
+FILTER_INIT_VN = 'na'
+
+# Cross-campaign consistency for joint DYCOMS+RICO calibration.
+# The joint inference needs both summary NetCDFs to carry the SAME members with
+# the same parameter draws, but the band filter evaluated per campaign keeps
+# very different sets (DYCOMS mostly undershoots the LWP target, RICO mostly
+# overshoots). Listing the campaigns here makes every run intersect the
+# per-campaign in-band sets, so each camp's NC ends up with an identical
+# member list. Members are matched across campaigns by (sim_config with the
+# camp token stripped, member number); the two ensembles are the same LHS
+# design, so those share a params.csv.
+#
+# The OTHER campaigns are read from their existing joblib caches only - this
+# never loads raw CM1 output - so run each campaign at least once before
+# enabling this. Set to None (or ()) to filter each campaign in isolation.
+FILTER_JOIN_CAMPS = ('dycoms', 'rico')
 
 def main(camp='dycoms'):
     """Main function to process PPE data"""
@@ -57,28 +92,36 @@ def main(camp='dycoms'):
     n_test = n_workers
 
     ppe_basename = [
-                    'fullmp_dycoms_fkbdebug_r0_lhs',
-                    'fullmp_dycoms_fkbdebug_r0_extra_lhs',
-                    # 'fullmp_dycoms_offpolicy_r6_sednewparam2_lhs',
-                    # 'fullmp_dycoms_offpolicy_r6_fixclouddz_lhs',
-                    # 'fullmp_dycoms_r7_pilot_lhs',
-                    # 'fullmp_dycoms_r7_extra_lhs',
+                    # 'fullmp_test0_offline_qmom2_dycoms_lhs',
+                    # 'fullmp_test0_offline_qmom2_e1_dycoms_lhs',
+                    # 'fullmp_test0_offline_qmom2_e2_dycoms_lhs',
+                    # 'fullmp_test0_offline_qmom2_pm_dycoms_lhs',
+                    # 'fullmp_test0_offline_qmom2_e1_pm_rico_lhs',
+                    # 'fullmp_qmom2_thres0_r1_dycoms_sim_arviz',
+                    # 'fullmp_qmom2_thres0_r1_dycoms_arviz',
+                    # 'fullmp_qmom2_r1_pm_dycoms_arviz',
+                    # 'fullmp_qmom2_finer_r1_pm_dycoms_arviz',
+                    # 'fullmp_qmom2_finer_r1_e1_pm_dycoms_arviz',
+                    # 'fullmp_qmom2_finer_r1_e2_pm_dycoms_arviz',
+                    # 'fullmp_qmom2_r2_dycoms_arviz',
+                    'fullmp_2cat_slotfix_dycoms_arviz',
+                    'fullmp_2cat_r1_dycoms_arviz',
                     ]
 
     sim_configs = [bn.replace('dycoms', camp) for bn in ppe_basename]
     # target_sim_config = f'NCE_{camp}_tgt'
 
     if 'NCE' in ppe_basename[0]:
-        target_sim_config = f'NCE_{camp}_tgt'
-        l_pert = False
+        target_sim_config = f'NCE_tgt_{camp}_pert'
+        l_pert = True
     else:
-        target_sim_config = f'fullmp_{camp}_tgt_pert_oldcoalkernel'
+        target_sim_config = f'fullmp_tgt_NewCoalKernel_{camp}_pert'
         l_pert = True
 
 
     if camp == 'rico':
-        steady_state_hrs = 5
-        min_files = 33
+        steady_state_hrs = 8
+        min_files = 49
         onset_skip_hrs = 1.5
     elif camp == 'dycoms':
         steady_state_hrs = 2
@@ -88,7 +131,7 @@ def main(camp='dycoms'):
         min_files = None
         onset_skip_hrs = 0.0
 
-    lwp_threshold = 0.02 # equiv to 50 g/m2
+    lwp_threshold = 0.0 # kg/m2
     print('lwp_threshold:', lwp_threshold)
     print('PPE directory:', sim_configs)
     print('target directory:', target_sim_config)
@@ -143,7 +186,8 @@ def main(camp='dycoms'):
 
     if 'fullmp' in ppe_basename[0]:
         var_interest += [
-                     'v_precip_onset', 'precip_frac_ss', 'prate_dm_ss', 'cloud_thickness_dm_ss', 
+                     'prate_dm_ss', 'precip_frac_ss', 'v_precip_onset', 'cloud_thickness_dm_ss', 
+                     'cloud_cover_10_ss', 'cloud_cover_30_ss', 'cloud_cover_50_ss',
                      'Dtail_dm_ss', 'M6_dmpath_overshoot', 'prate_dm_overshoot','lwp_persist_ss',
                 ]
 
@@ -203,11 +247,6 @@ def main(camp='dycoms'):
     # I'll use the first config name for the file or join them. 
     # Let's use sim_configs[0] for the filename prefix if it's a list.
     
-    if l_testing:
-        nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{round(lwp_threshold*1e3)}_test_N{n_test}.nc"
-    else:
-        nc_filename = f"{lp.nc_dir}{sim_config_str}_momval_lwp{round(lwp_threshold*1e3)}_N{len(ppe_idx)}.nc"
-
     if l_parallel:
         # On compute nodes, use processes (True) for library isolation (NetCDF is often not thread-safe).
         # We limit workers to avoid memory/IO pressure on the Lustre filesystem.
@@ -451,6 +490,113 @@ def main(camp='dycoms'):
     else:
         print("All variables of interest already exist in target data.")
 
+    def _cached_camp_keep_keys(other_camp):
+        """In-band member keys for another campaign, from its joblib caches.
+
+        Reads only cached data, so the other campaign must have been summarized
+        at least once. Raises with an actionable message if a cache is absent.
+        """
+        oc_sim_configs = [bn.replace('dycoms', other_camp) for bn in ppe_basename]
+        if 'NCE' in ppe_basename[0]:
+            oc_target = f'NCE_tgt_{other_camp}_pert'
+        else:
+            oc_target = f'fullmp_tgt_NewCoalKernel_{other_camp}_pert'
+        oc_vars_strs, oc_vars_vn = lp.get_dics(cl.output_dir, target_datedir,
+                                               oc_target, n_init)
+
+        oc_nc = {}
+        for sc in oc_sim_configs:
+            jl = (f"{cl.output_dir}/{datedir}/joblibs/"
+                  f"{sc}_lwpthres{round(lwp_threshold*1e3)}.joblib")
+            if not os.path.exists(jl):
+                raise FileNotFoundError(
+                    f"FILTER_JOIN_CAMPS includes '{other_camp}' but its PPE cache "
+                    f"is missing: {jl}\nRun `python ppe_summary_cm1.py {other_camp}` "
+                    "first, or set FILTER_JOIN_CAMPS = None."
+                )
+            oc_nc[sc] = cl.invalidate_stale_vars(
+                _sanitize_sim_payload(joblib.load(jl), sc))
+        oc_tgt_jl = (f"{cl.output_dir}/{target_datedir}/joblibs/"
+                     f"{oc_target}_lwpthres{round(lwp_threshold*1e3)}.joblib")
+        if not os.path.exists(oc_tgt_jl):
+            raise FileNotFoundError(
+                f"FILTER_JOIN_CAMPS includes '{other_camp}' but its target cache "
+                f"is missing: {oc_tgt_jl}\nRun `python ppe_summary_cm1.py "
+                f"{other_camp}` first, or set FILTER_JOIN_CAMPS = None."
+            )
+        oc_nc[oc_target] = cl.invalidate_stale_vars(joblib.load(oc_tgt_jl))
+
+        oc_finfo = {'dir': cl.output_dir, 'date': datedir, 'vars_vn': oc_vars_vn,
+                    'sim_config': oc_sim_configs, 'mp_config': train_mp,
+                    'min_files': min_files, 'onset_skip_hrs': onset_skip_hrs}
+        oc_ppe_idx = cl.filter_ppe_by_stinginess(
+            cl.get_pert_idx(oc_finfo), oc_sim_configs, sting_lvl, buffer_size,
+            cl.output_dir, datedir, train_mp)
+
+        return cl.band_keep_keys(
+            oc_nc, oc_ppe_idx, oc_vars_strs, oc_target, target_mp, train_mp,
+            l_pert, other_camp, FILTER_VAR, FILTER_RATIO, init_vn=FILTER_INIT_VN)
+
+    # Optional filter: drop PPE members outside the (widened) target band.
+    # Must run after both PPE and target data are loaded, and before any of the
+    # dimensions / arrays below are sized from len(ppe_idx).
+    join_camps = [c for c in (FILTER_JOIN_CAMPS or ())]
+    if FILTER_VAR and FILTER_RATIO and join_camps:
+        if camp not in join_camps:
+            raise ValueError(
+                f"camp '{camp}' is not in FILTER_JOIN_CAMPS {tuple(join_camps)}; "
+                "add it or set FILTER_JOIN_CAMPS = None."
+            )
+        if FILTER_VAR not in var_interest:
+            raise ValueError(
+                f"FILTER_VAR '{FILTER_VAR}' is not in var_interest; it must be "
+                "one of the loaded constraint variables."
+            )
+        print(f"\n[band filter] cross-campaign intersection over {tuple(join_camps)}")
+        keep_keys, per_camp = None, {}
+        for jc in join_camps:
+            if jc == camp:
+                ks, seen = cl.band_keep_keys(
+                    nc_dict, ppe_idx, vars_strs, target_sim_config, target_mp,
+                    train_mp, l_pert, camp, FILTER_VAR, FILTER_RATIO,
+                    init_vn=FILTER_INIT_VN)
+            else:
+                ks, seen = _cached_camp_keep_keys(jc)
+            per_camp[jc] = (ks, seen)
+            print(f"[band filter]   {jc:8s}: {len(ks)}/{len(seen)} members in band")
+            keep_keys = ks if keep_keys is None else (keep_keys & ks)
+
+        # A member absent from any campaign's pool cannot be used jointly.
+        common = set.intersection(*(seen for _, seen in per_camp.values()))
+        missing_somewhere = set.union(*(seen for _, seen in per_camp.values())) - common
+        if missing_somewhere:
+            print(f"[band filter]   {len(missing_somewhere)} member(s) absent from at "
+                  "least one campaign's pool; excluded from the intersection")
+        keep_keys &= common
+
+        n_before = len(ppe_idx)
+        ppe_idx = [ip for ip in ppe_idx
+                   if cl.member_key(ip['sim_config'], ip['global_id'], camp) in keep_keys]
+        print(f"[band filter]   intersection: {len(ppe_idx)}/{n_before} members kept "
+              f"for '{camp}' (identical member set in every joined campaign)")
+        filt_tag = (cl.band_filter_tag(FILTER_VAR, FILTER_RATIO)
+                    + '_isect')
+    else:
+        ppe_idx, filt_tag = cl.apply_target_band_filter(
+            nc_dict, ppe_idx, vars_strs, var_interest, target_sim_config, target_mp,
+            train_mp, l_pert, sim_configs,
+            filter_var=FILTER_VAR, filter_ratio=FILTER_RATIO, init_vn=FILTER_INIT_VN,
+        )
+    if not ppe_idx:
+        raise ValueError(
+            f"Target-band filter on '{FILTER_VAR}' (ratio {FILTER_RATIO}) removed "
+            "every PPE member; loosen FILTER_RATIO or disable the filter."
+        )
+
+    if l_testing:
+        nc_filename = f"{lp.nc_dir}{sim_config_str}_lwp{round(lwp_threshold*1e3)}{filt_tag}_test_N{n_test}.nc"
+    else:
+        nc_filename = f"{lp.nc_dir}{sim_config_str}_lwp{round(lwp_threshold*1e3)}{filt_tag}_N{len(ppe_idx)}.nc"
 
     ncase = 1
     ncase_respective = [len(i) for i in vars_strs]
@@ -512,6 +658,14 @@ def main(camp='dycoms'):
     for var_vn in vars_vn:
         global_attrs[var_vn + '_units'] = nc_dict[var_vn + '_units']
     global_attrs['n_init'] = n_init
+    if filt_tag:
+        global_attrs['filter_var'] = FILTER_VAR
+        global_attrs['filter_ratio'] = float(FILTER_RATIO)
+        global_attrs['filter_ratio_effective'] = min(float(FILTER_RATIO),
+                                                     1.0 / float(FILTER_RATIO))
+        if join_camps:
+            global_attrs['filter_join_camps'] = np.array(join_camps)
+            global_attrs['filter_join_mode'] = 'intersection'
     if 'npert' in dims:
         global_attrs['npert'] = dims['npert']
     else:
@@ -536,7 +690,7 @@ def main(camp='dycoms'):
             global_attrs['thresholds_eff0'].append(0.)
         elif 'prate' in ivar:
             global_attrs['thresholds_eff0'].append(1e-4)
-        elif 'precip_frac' in ivar:
+        elif 'precip_frac' in ivar or 'cloud_cover' in ivar:
             global_attrs['thresholds_eff0'].append(0.01)
         elif 'onset' in ivar or 'M3_' in ivar or 'cloud_thickness' in ivar:
             global_attrs['thresholds_eff0'].append(np.nan)
